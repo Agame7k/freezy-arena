@@ -14,8 +14,57 @@ Display shown on the audience screen overlayed over the video.
     <link rel="stylesheet" href="/static/css/audience_display.css"/>
   </head>
   <body>
-    <div id="videoOverlay">
-      <video id="transitionVideo"></video>
+    <div id="winnerReveal">
+      <div id="winnerRevealStage">
+        <svg id="winnerRevealGrid">
+          <defs>
+            <pattern id="winnerRevealHexPattern" width="56" height="100" patternUnits="userSpaceOnUse">
+              <path d="M28 66L0 50L0 16L28 0L56 16L56 50L28 66L28 100"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#winnerRevealHexPattern)"/>
+        </svg>
+        <div id="winnerRevealRays"></div>
+        <canvas id="winnerRevealAmbient"></canvas>
+        <div id="winnerRevealStrobe"></div>
+        <div id="winnerRevealHud">
+          <div class="reveal-corner" data-corner="top-left"></div>
+          <div class="reveal-corner" data-corner="top-right"></div>
+          <div class="reveal-corner" data-corner="bottom-left"></div>
+          <div class="reveal-corner" data-corner="bottom-right"></div>
+          <div class="reveal-ticker" data-edge="top"><div class="reveal-ticker-track"></div></div>
+          <div class="reveal-ticker" data-edge="bottom"><div class="reveal-ticker-track"></div></div>
+        </div>
+        <div id="winnerRevealFlare"></div>
+        <canvas id="winnerRevealParticles"></canvas>
+        <div id="winnerRevealBeam"></div>
+        <svg id="winnerRevealEmblem" viewBox="-250 -250 500 500">
+          <circle id="winnerRevealOrbit" r="232"/>
+          {{range $i := seq 3}}
+          <polygon class="reveal-shockwave" points="0,-190 164.5,-95 164.5,95 0,190 -164.5,95 -164.5,-95"/>
+          {{end}}
+          <polygon class="reveal-hex-outer" pathLength="1"
+            points="0,-190 164.5,-95 164.5,95 0,190 -164.5,95 -164.5,-95"/>
+          <polygon class="reveal-hex-inner" pathLength="1"
+            points="0,-160 138.6,-80 138.6,80 0,160 -138.6,80 -138.6,-80"/>
+          {{range $i := seq 6}}
+          <line class="reveal-tick" x1="0" y1="-202" x2="0" y2="-220" transform="rotate({{multiply $i 60}})"/>
+          {{end}}
+        </svg>
+        <div id="winnerRevealText">
+          <div id="winnerRevealKicker"></div>
+          <div id="winnerRevealTitle"></div>
+          <div id="winnerRevealVerdict"></div>
+          <div id="winnerRevealScore">
+            <span id="winnerRevealLeftScore"></span>
+            <span class="winner-reveal-score-divider"></span>
+            <span id="winnerRevealRightScore"></span>
+          </div>
+          <div id="winnerRevealTiebreak"></div>
+        </div>
+        <div id="winnerRevealWhiteout"></div>
+      </div>
+      <div id="winnerRevealWipe"></div>
     </div>
     <div id="overlayCentering">
       <div id="matchOverlayContainer">
@@ -101,14 +150,10 @@ Display shown on the audience screen overlayed over the video.
       </div>
     </div>
     <div id="blindsContainer">
-      <div class="blinds right background">
-        <div class="blindsCenter blank"></div>
-      </div>
-      <div class="blinds left background">
-        <div class="blindsCenter blank"></div>
-      </div>
-      <div class="blindsCenter full">
-        <img id="blindsLogo" src="/static/img/blinds-logo{{.EventSettings.LogoSuffix}}.png" 
+      <div id="blindsBackdrop"></div>
+      <div id="blindsRing"></div>
+      <div id="logoDisc">
+        <img id="blindsLogo" src="/static/img/blinds-logo{{.EventSettings.LogoSuffix}}.png"
           onerror="this.src='/static/img/blinds-logo.png'" alt="logo"/>
       </div>
       <div id="finalScoreCentering">
@@ -230,7 +275,7 @@ Display shown on the audience screen overlayed over the video.
       <div id="bracket">
         <img id="bracketSvg" src=""/>
       </div>
-      <div id="sponsor" class="carousel slide" data-bs-ride="carousel">
+      <div id="sponsor" class="carousel slide carousel-fade" data-bs-ride="carousel">
         <div class="carousel-inner" id="sponsorContainer">
         </div>
       </div>
@@ -284,7 +329,6 @@ Display shown on the audience screen overlayed over the video.
     <script src="/static/js/lib/jquery.min.js"></script>
     <script src="/static/js/lib/jquery.json-2.4.min.js"></script>
     <script src="/static/js/lib/jquery.websocket-0.0.1.js"></script>
-    <script src="/static/js/lib/jquery.transit.min.js"></script>
     <script src="/static/js/lib/handlebars-1.3.0.js"></script>
     <script src="/static/js/lib/bootstrap.bundle.min.js"></script>
     <script src="/static/js/cheesy-websocket.js"></script>

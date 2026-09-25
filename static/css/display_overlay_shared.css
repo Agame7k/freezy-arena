@@ -31,6 +31,15 @@ html {
   font-size: 22px;
 }
 
+/* A brief pulsing glow while the match intro is showing, to build a little anticipation before the timer starts. */
+#matchOverlay[data-mode="intro"] {
+  animation: intro-glow-pulse 1.6s ease-in-out infinite;
+}
+@keyframes intro-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 204, 51, 0.5); }
+  50% { box-shadow: 0 0 18px 4px rgba(255, 204, 51, 0.35); }
+}
+
 #matchOverlayTop {
   height: 100px;
   display: flex;
@@ -129,6 +138,8 @@ html {
 
 .avatar {
   height: 25px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
 }
 
 .score-number {
@@ -213,6 +224,28 @@ html {
   height: 150px;
   background-color: #fff;
   border: 1px solid #222;
+  --lean: 0;
+  --intensity: 0;
+}
+
+/* A mini momentum glow, so the compact broadcast bug shows which alliance is ahead. Two separately-faded glow layers
+   (red, blue) let a single --lean value (-1 blue .. 1 red) drive both without needing conditional color math in CSS. */
+#matchCircle::before, #matchCircle::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  transition: opacity 400ms ease;
+}
+#matchCircle::before {
+  box-shadow: 0 0 22px 5px rgba(255, 68, 68, 0.75);
+  opacity: calc(var(--intensity) * max(var(--lean), 0));
+}
+#matchCircle::after {
+  box-shadow: 0 0 22px 5px rgba(32, 128, 255, 0.75);
+  opacity: calc(var(--intensity) * max(var(--lean) * -1, 0));
 }
 
 #logo {
