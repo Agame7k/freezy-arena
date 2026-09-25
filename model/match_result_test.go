@@ -88,3 +88,41 @@ func TestCorrectPlayoffScoreResetsDqState(t *testing.T) {
 	assert.Equal(t, false, matchResult.RedScore.PlayoffDq)
 	assert.Equal(t, true, matchResult.BlueScore.PlayoffDq)
 }
+
+func TestApplyPlayoffAllianceCards(t *testing.T) {
+	match := &Match{Red1: 1, Red2: 2, Red3: 3, Blue1: 4, Blue2: 5, Blue3: 6}
+	testCases := []struct {
+		name          string
+		redCards      map[string]string
+		expectedCards map[string]string
+	}{
+		{"no cards", map[string]string{}, map[string]string{}},
+		{
+			"one team's card applies to the alliance",
+			map[string]string{"2": "yellow"},
+			map[string]string{"1": "yellow", "2": "yellow", "3": "yellow"},
+		},
+		{
+			"most serious card wins",
+			map[string]string{"1": "yellow", "3": "red"},
+			map[string]string{"1": "red", "2": "red", "3": "red"},
+		},
+		{
+			"dq outranks red",
+			map[string]string{"2": "red", "3": "dq"},
+			map[string]string{"1": "dq", "2": "dq", "3": "dq"},
+		},
+		{"cleared cards are removed", map[string]string{"1": "", "2": ""}, map[string]string{}},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			matchResult := NewMatchResult()
+			matchResult.RedCards = testCase.redCards
+			matchResult.BlueCards = map[string]string{"5": "yellow"}
+			matchResult.ApplyPlayoffAllianceCards(match)
+			assert.Equal(t, testCase.expectedCards, matchResult.RedCards)
+			assert.Equal(t, map[string]string{"4": "yellow", "5": "yellow", "6": "yellow"}, matchResult.BlueCards)
+		})
+	}
+}

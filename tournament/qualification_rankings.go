@@ -118,6 +118,32 @@ func CalculateTeamCards(database *model.Database, matchType model.MatchType) err
 				teamsMap[teamId] = team
 			}
 		}
+
+		// In playoffs a card belongs to the whole alliance, so it also carries over to any alliance member who sat
+		// this match out.
+		if match.Type == model.Playoff {
+			for _, side := range []struct {
+				allianceId int
+				cards      map[string]string
+			}{{match.PlayoffRedAlliance, matchResult.RedCards}, {match.PlayoffBlueAlliance, matchResult.BlueCards}} {
+				if !hasCarriedCard(side.cards) {
+					continue
+				}
+				alliance, err := database.GetAllianceById(side.allianceId)
+				if err != nil {
+					return err
+				}
+				if alliance == nil {
+					continue
+				}
+				for _, teamId := range alliance.TeamIds {
+					if team, ok := teamsMap[strconv.Itoa(teamId)]; ok {
+						team.YellowCard = true
+						teamsMap[strconv.Itoa(teamId)] = team
+					}
+				}
+			}
+		}
 	}
 
 	// Save the teams to the database.
@@ -129,6 +155,16 @@ func CalculateTeamCards(database *model.Database, matchType model.MatchType) err
 	}
 
 	return nil
+}
+
+// Returns whether any of the given cards is one that a team carries into later matches.
+func hasCarriedCard(cards map[string]string) bool {
+	for _, card := range cards {
+		if card == "red" || card == "yellow" {
+			return true
+		}
+	}
+	return false
 }
 
 // Incrementally accounts for the given match result in the set of rankings that are being built.

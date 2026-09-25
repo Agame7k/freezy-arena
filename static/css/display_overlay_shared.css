@@ -100,6 +100,33 @@ html {
   background-color: #fc0;
 }
 
+/* In playoffs a yellow card belongs to the whole alliance: a single card glyph in the inner top corner of its team
+   column. */
+.teams {
+  position: relative;
+}
+
+.teams[data-alliance-card=yellow]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  width: 9px;
+  height: 13px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #ffe066, #fcc419);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 6px rgba(255, 212, 59, 0.8);
+}
+
+#leftTeams[data-alliance-card=yellow]::after {
+  right: 4px;
+  transform: rotate(10deg);
+}
+
+#rightTeams[data-alliance-card=yellow]::after {
+  left: 4px;
+  transform: rotate(-10deg);
+}
+
 #leftTeams {
   border-right: 1px solid #222;
 }

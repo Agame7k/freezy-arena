@@ -137,6 +137,22 @@ UI for manually editing the result for a match.
     </fieldset>
     <fieldset>
       <legend>Cards</legend>
+      {{if .AllianceCards}}
+      <div class="row mb-3">
+        <label class="col-lg-2 control-label">
+          {{if .PlayoffAlliance}}Alliance {{.PlayoffAlliance}}{{else}}Alliance{{end}}
+        </label>
+        <div class="col-lg-8">
+          <div class="row">
+            {{template "cardRadio" dict "alliance" .Alliance "team" "Alliance" "value" "" "label" "None" "checked" true}}
+            {{template "cardRadio" dict "alliance" .Alliance "team" "Alliance" "value" "yellow" "label" "Yellow"}}
+            {{template "cardRadio" dict "alliance" .Alliance "team" "Alliance" "value" "red" "label" "Red"}}
+            {{template "cardRadio" dict "alliance" .Alliance "team" "Alliance" "value" "dq" "label" "DQ"}}
+          </div>
+          <div class="form-text">In playoffs a card applies to every team on the alliance.</div>
+        </div>
+      </div>
+      {{else}}
       {{range $team := .Teams}}
       <div class="row mb-3">
         <label class="col-lg-2 control-label">Team {{$team}}</label>
@@ -149,6 +165,7 @@ UI for manually editing the result for a match.
           </div>
         </div>
       </div>
+      {{end}}
       {{end}}
     </fieldset>
   </div>

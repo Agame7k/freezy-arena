@@ -225,3 +225,42 @@ func setupMatchResultsForRankings(database *model.Database) {
 	matchResult6 := model.BuildTestMatchResult(match6.Id, 1)
 	database.CreateMatchResult(matchResult6)
 }
+
+func TestCalculateTeamCardsPlayoffAlliance(t *testing.T) {
+	database := setupTestDb(t)
+	CreateTestAlliances(database, 2)
+	for _, teamId := range []int{101, 102, 103, 104, 201, 202, 203, 204} {
+		database.CreateTeam(&model.Team{Id: teamId})
+	}
+	match := model.Match{
+		Type:                model.Playoff,
+		TypeOrder:           1,
+		Red1:                101,
+		Red2:                102,
+		Red3:                103,
+		Blue1:               201,
+		Blue2:               202,
+		Blue3:               203,
+		PlayoffRedAlliance:  1,
+		PlayoffBlueAlliance: 2,
+		Status:              game.RedWonMatch,
+	}
+	database.CreateMatch(&match)
+	matchResult := model.BuildTestMatchResult(match.Id, 1)
+	matchResult.MatchType = model.Playoff
+	matchResult.RedCards = map[string]string{"102": "yellow"}
+	matchResult.BlueCards = map[string]string{}
+	database.CreateMatchResult(matchResult)
+
+	assert.Nil(t, CalculateTeamCards(database, model.Playoff))
+
+	// The card carries to every member of the carded alliance, including the one who didn't play.
+	for _, teamId := range []int{101, 102, 103, 104} {
+		team, _ := database.GetTeamById(teamId)
+		assert.True(t, team.YellowCard, "team %d", teamId)
+	}
+	for _, teamId := range []int{201, 202, 203, 204} {
+		team, _ := database.GetTeamById(teamId)
+		assert.False(t, team.YellowCard, "team %d", teamId)
+	}
+}

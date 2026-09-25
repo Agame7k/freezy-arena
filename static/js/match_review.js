@@ -93,8 +93,10 @@ const updateResults = function (alliance) {
   }
 
   result.cards = {};
+  // In playoffs the form has a single card for the whole alliance, which every team on it receives.
+  const allianceCard = formData[`${alliance}TeamAllianceCard`];
   $.each(result.teams, function (i, team) {
-    result.cards[team] = formData[`${alliance}Team${team}Card`];
+    result.cards[team] = allianceCard !== undefined ? allianceCard : formData[`${alliance}Team${team}Card`];
   });
 };
 
@@ -159,11 +161,19 @@ const buildFoulElement = function (alliance, index, foul) {
   return element;
 };
 
+// How serious each card is, for showing the one an alliance ended up with when its teams' cards differ.
+const cardSeverity = {"": 0, "yellow": 1, "red": 2, "dq": 3};
+
 const renderCards = function (alliance) {
   const result = allianceResults[alliance];
+  let allianceCard = "";
   $.each(result.cards, function (team, card) {
     getInputElement(alliance, `Team${team}Card`, card).prop("checked", true);
+    if ((cardSeverity[card] || 0) > cardSeverity[allianceCard]) {
+      allianceCard = card;
+    }
   });
+  getInputElement(alliance, "TeamAllianceCard", allianceCard).prop("checked", true);
 };
 
 const scheduleScoreSummaryRefresh = function () {

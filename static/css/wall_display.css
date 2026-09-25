@@ -5,6 +5,7 @@
 
 @import url("/static/css/display_overlay_shared.css");
 @import url("/static/css/match_intro.css");
+@import url("/static/css/winner_reveal.css");
 
 #overlayCentering {
   top: -200px;

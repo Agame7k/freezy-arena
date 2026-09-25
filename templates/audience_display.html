@@ -14,58 +14,6 @@ Display shown on the audience screen overlayed over the video.
     <link rel="stylesheet" href="/static/css/audience_display.css"/>
   </head>
   <body>
-    <div id="winnerReveal">
-      <div id="winnerRevealStage">
-        <svg id="winnerRevealGrid">
-          <defs>
-            <pattern id="winnerRevealHexPattern" width="56" height="100" patternUnits="userSpaceOnUse">
-              <path d="M28 66L0 50L0 16L28 0L56 16L56 50L28 66L28 100"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#winnerRevealHexPattern)"/>
-        </svg>
-        <div id="winnerRevealRays"></div>
-        <canvas id="winnerRevealAmbient"></canvas>
-        <div id="winnerRevealStrobe"></div>
-        <div id="winnerRevealHud">
-          <div class="reveal-corner" data-corner="top-left"></div>
-          <div class="reveal-corner" data-corner="top-right"></div>
-          <div class="reveal-corner" data-corner="bottom-left"></div>
-          <div class="reveal-corner" data-corner="bottom-right"></div>
-          <div class="reveal-ticker" data-edge="top"><div class="reveal-ticker-track"></div></div>
-          <div class="reveal-ticker" data-edge="bottom"><div class="reveal-ticker-track"></div></div>
-        </div>
-        <div id="winnerRevealFlare"></div>
-        <canvas id="winnerRevealParticles"></canvas>
-        <div id="winnerRevealBeam"></div>
-        <svg id="winnerRevealEmblem" viewBox="-250 -250 500 500">
-          <circle id="winnerRevealOrbit" r="232"/>
-          {{range $i := seq 3}}
-          <polygon class="reveal-shockwave" points="0,-190 164.5,-95 164.5,95 0,190 -164.5,95 -164.5,-95"/>
-          {{end}}
-          <polygon class="reveal-hex-outer" pathLength="1"
-            points="0,-190 164.5,-95 164.5,95 0,190 -164.5,95 -164.5,-95"/>
-          <polygon class="reveal-hex-inner" pathLength="1"
-            points="0,-160 138.6,-80 138.6,80 0,160 -138.6,80 -138.6,-80"/>
-          {{range $i := seq 6}}
-          <line class="reveal-tick" x1="0" y1="-202" x2="0" y2="-220" transform="rotate({{multiply $i 60}})"/>
-          {{end}}
-        </svg>
-        <div id="winnerRevealText">
-          <div id="winnerRevealKicker"></div>
-          <div id="winnerRevealTitle"></div>
-          <div id="winnerRevealVerdict"></div>
-          <div id="winnerRevealScore">
-            <span id="winnerRevealLeftScore"></span>
-            <span class="winner-reveal-score-divider"></span>
-            <span id="winnerRevealRightScore"></span>
-          </div>
-          <div id="winnerRevealTiebreak"></div>
-        </div>
-        <div id="winnerRevealWhiteout"></div>
-      </div>
-      <div id="winnerRevealWipe"></div>
-    </div>
     <div id="overlayCentering">
       <div id="matchOverlayContainer">
         <div class="playoff-alliance" id="leftPlayoffAlliance"></div>
@@ -334,6 +282,7 @@ Display shown on the audience screen overlayed over the video.
     <script src="/static/js/cheesy-websocket.js"></script>
     <script src="/static/js/match_timing.js"></script>
     <script src="/static/js/match_intro.js"></script>
+    <script src="/static/js/winner_reveal.js"></script>
     <script src="/static/js/audience_display.js"></script>
     <script>
     document.addEventListener("dblclick", () => {

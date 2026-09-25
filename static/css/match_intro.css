@@ -82,11 +82,18 @@
 }
 
 .match-intro-alliance {
+  display: flex;
+  align-items: center;
+  gap: 1.6vh;
   font-size: min(3.4vh, 2.4vw);
   white-space: nowrap;
   letter-spacing: 0.3em;
   text-transform: uppercase;
   opacity: 0;
+}
+
+#matchIntroRight .match-intro-alliance {
+  flex-direction: row-reverse;
 }
 
 .match-intro-teams {
@@ -142,6 +149,29 @@
 
 #matchIntroRight .match-intro-meta {
   flex-direction: row-reverse;
+}
+
+.match-intro-number-row {
+  display: flex;
+  align-items: center;
+  gap: 1.6vh;
+}
+
+#matchIntroRight .match-intro-number-row {
+  flex-direction: row-reverse;
+}
+
+/* A team carrying a yellow card gets a little card beside its number. */
+.match-intro-yellow-card {
+  width: min(3.4vh, 2.2vw);
+  height: min(4.8vh, 3.1vw);
+  flex-shrink: 0;
+  border: 0.3vh solid rgba(0, 0, 0, 0.25);
+  border-radius: 0.5vh;
+  background: linear-gradient(135deg, #ffe066, #fcc419);
+  box-shadow: 0 0 1.6vh rgba(255, 212, 59, 0.75), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.4);
+  transform: rotate(-10deg);
+  opacity: 0;
 }
 
 .match-intro-nickname {
@@ -224,4 +254,124 @@
   background: #fff;
   pointer-events: none;
   opacity: 0;
+}
+
+/* Card glyphs other than the yellow one, for the result view. */
+.match-intro-yellow-card[data-card=red] {
+  background: linear-gradient(135deg, #ff6b6b, #e03131);
+  box-shadow: 0 0 1.6vh rgba(255, 70, 70, 0.75), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.4);
+}
+
+.match-intro-yellow-card[data-card=dq] {
+  background: #111;
+  border-color: #e03131;
+  box-shadow: 0 0 1.6vh rgba(255, 70, 70, 0.6), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.4);
+}
+
+/* Result view: each side leads with its final score, and the side that lost fades back a little. */
+.match-intro-score {
+  color: #ffd166;
+  font-size: min(16vh, 10vw);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 0 3vh rgba(255, 209, 102, 0.6), 0 1vh 2vh rgba(0, 0, 0, 0.4);
+  opacity: 0;
+}
+
+#matchIntro[data-view=result] .match-intro-side {
+  gap: 2.5vh;
+}
+
+#matchIntro[data-view=result] .match-intro-side[data-result=lost] .match-intro-teams,
+#matchIntro[data-view=result] .match-intro-side[data-result=lost] .match-intro-score {
+  filter: saturate(0.6) brightness(0.8);
+}
+
+#matchIntro[data-view=result] #matchIntroVs {
+  font-size: min(12vh, 8vw);
+}
+
+.match-intro-pills {
+  display: flex;
+  gap: 1.2vh;
+  margin-top: -1vh;
+}
+
+.match-intro-pills:empty {
+  display: none;
+}
+
+#matchIntroRight .match-intro-pills {
+  flex-direction: row-reverse;
+}
+
+.match-intro-verdict, .match-intro-card-pill {
+  padding: 0.4vh 1.6vh;
+  border-radius: 999px;
+  font-size: min(2.2vh, 1.5vw);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.match-intro-verdict {
+  background: #ffd166;
+  box-shadow: 0 0 2vh rgba(255, 209, 102, 0.7);
+  color: #0b1728;
+}
+
+.match-intro-card-pill[data-card=yellow] {
+  background: #fcc419;
+  color: #0b1728;
+}
+
+.match-intro-card-pill[data-card=red] {
+  background: #e03131;
+  color: #fff;
+}
+
+.match-intro-card-pill[data-card=dq] {
+  background: #111;
+  border: 0.25vh solid #e03131;
+  color: #fff;
+}
+
+.match-intro-destination {
+  color: rgba(255, 255, 255, 0.8);
+  font-family: "FuturaLT";
+  font-size: min(2.4vh, 1.7vw);
+  letter-spacing: 0.06em;
+  opacity: 0;
+}
+
+/* A team with a red card or DQ is struck through, dimmed, with a line drawing across its number once it lands. */
+.match-intro-number {
+  position: relative;
+}
+
+.match-intro-team[data-red-card=true] .match-intro-number {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.match-intro-team[data-red-card=true] .match-intro-avatar {
+  opacity: 0.5;
+}
+
+.match-intro-team[data-red-card=true] .match-intro-number::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -0.08em;
+  right: -0.08em;
+  height: 0.09em;
+  margin-top: -0.045em;
+  border-radius: 0.05em;
+  background: #111;
+  box-shadow: 0 0 0 0.12vh rgba(255, 255, 255, 0.7);
+  transform: rotate(-8deg);
+  animation: match-intro-strike 450ms cubic-bezier(0.16, 1, 0.3, 1) 1.5s both;
+}
+
+@keyframes match-intro-strike {
+  from { transform: rotate(-8deg) scaleX(0); }
+  to { transform: rotate(-8deg) scaleX(1); }
 }

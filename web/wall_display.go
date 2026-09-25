@@ -70,5 +70,6 @@ func (web *Web) wallDisplayWebsocketHandler(w http.ResponseWriter, r *http.Reque
 		web.arena.MatchTimeNotifier,
 		web.arena.RealtimeScoreNotifier,
 		web.arena.ReloadDisplaysNotifier,
+		web.arena.ScorePostedNotifier,
 	)
 }

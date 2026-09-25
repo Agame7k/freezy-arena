@@ -1,0 +1,411 @@
+/*
+  Copyright 2026 Team 254. All Rights Reserved.
+*/
+
+/* Winner reveal: the full-screen, code-drawn sequence played before the final score (see winner_reveal.js). It sits
+   above everything. --reveal-color drives every tinted element: neutral silver during the
+   build-up, flickering between alliance colors during the roulette (data-tease), and the winner's color once revealed
+   (data-winner). Registering it as a color lets those changes blend rather than hard-cut. */
+@property --reveal-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #dfe7f2;
+}
+#winnerReveal {
+  --reveal-color: #dfe7f2;
+  transition: --reveal-color 140ms linear;
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 100;
+  overflow: hidden;
+}
+#winnerReveal[data-tease=red], #winnerReveal[data-winner=red] {
+  --reveal-color: #ff5571;
+}
+#winnerReveal[data-tease=blue], #winnerReveal[data-winner=blue] {
+  --reveal-color: #4da3ff;
+}
+#winnerReveal[data-winner=tie] {
+  --reveal-color: #ffd166;
+}
+#winnerRevealStage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--reveal-color) 22%, transparent) 0%, transparent 55%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 4px),
+    #050a14;
+}
+#winnerRevealFlare {
+  position: absolute;
+  width: 1100px;
+  height: 1100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--reveal-color) 70%, #fff) 0%,
+    color-mix(in srgb, var(--reveal-color) 35%, transparent) 30%, transparent 65%);
+  opacity: 0;
+  pointer-events: none;
+}
+#winnerRevealParticles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+#winnerRevealBeam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--reveal-color) 20%, #fff 50%, var(--reveal-color) 80%,
+    transparent);
+  box-shadow: 0 0 24px 4px color-mix(in srgb, var(--reveal-color) 60%, transparent);
+  transform: scaleX(0);
+}
+#winnerRevealEmblem {
+  position: absolute;
+  width: 640px;
+  height: 640px;
+  overflow: visible;
+  fill: none;
+}
+#winnerRevealEmblem polygon, #winnerRevealEmblem line {
+  stroke: var(--reveal-color);
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 10px var(--reveal-color));
+}
+.reveal-hex-outer {
+  stroke-width: 4;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.reveal-hex-inner {
+  stroke-width: 1.5;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0.6;
+}
+.reveal-tick {
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: 0;
+}
+#winnerRevealOrbit {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 12;
+  transform-origin: 0 0;
+  animation: reveal-orbit 24s linear infinite;
+  opacity: 0;
+}
+@keyframes reveal-orbit {
+  to { transform: rotate(360deg); }
+}
+#winnerRevealText {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #fff;
+  font-family: "FuturaLTBold";
+  text-align: center;
+}
+#winnerRevealKicker {
+  color: #b6c3d4;
+  font-size: 24px;
+  letter-spacing: 0.35em;
+  margin-bottom: 18px;
+  opacity: 0;
+}
+#winnerRevealTitle {
+  font-size: 132px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  opacity: 0;
+}
+#winnerRevealVerdict {
+  margin-top: 14px;
+  color: var(--reveal-color);
+  font-size: 64px;
+  line-height: 1;
+  letter-spacing: 0.22em;
+  /* Letter spacing trails after the last letter; pad the front to match so the word stays optically centered. */
+  padding-left: 0.22em;
+  opacity: 0;
+}
+#winnerRevealScore {
+  margin-top: 34px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  font-size: 58px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+}
+#winnerRevealLeftScore {
+  color: var(--left-reveal-color, #fff);
+}
+#winnerRevealRightScore {
+  color: var(--right-reveal-color, #fff);
+}
+.winner-reveal-score-divider {
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.5);
+}
+/* Any cards given in the match, shown under the result once it lands. */
+#winnerRevealCards {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+  opacity: 0;
+}
+#winnerRevealCards:empty {
+  display: none;
+}
+.reveal-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 18px;
+  border-radius: 999px;
+  background: rgba(5, 10, 20, 0.7);
+  color: #f8fafc;
+  font-size: 20px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.reveal-card::before {
+  content: "";
+  width: 16px;
+  height: 22px;
+  border-radius: 3px;
+  transform: rotate(-8deg);
+}
+.reveal-card[data-card=yellow]::before {
+  background: #fcc419;
+  box-shadow: 0 0 10px rgba(255, 212, 59, 0.8);
+}
+.reveal-card[data-card=red]::before {
+  background: #e03131;
+  box-shadow: 0 0 10px rgba(255, 70, 70, 0.8);
+}
+.reveal-card[data-card=dq]::before {
+  background: #111;
+  border: 2px solid #e03131;
+}
+#winnerRevealTiebreak {
+  margin-top: 18px;
+  color: #b6c3d4;
+  font-size: 22px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0;
+}
+/* A character still decoding: shows a shifting glyph in the alliance color, centered in a box already sized to the
+   letter it will become. */
+.reveal-glyph {
+  display: inline-block;
+  text-align: center;
+  color: var(--reveal-color);
+  opacity: 0.75;
+}
+/* Placeholder glyphs during the build-up all share one fixed width, so the line's length gives nothing away. */
+.reveal-glyph-fixed {
+  width: 0.78em;
+}
+.reveal-glyph.locked {
+  color: inherit;
+  opacity: 1;
+  animation: glyph-lock 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes glyph-lock {
+  from {
+    color: #fff;
+    text-shadow: 0 0 24px var(--reveal-color), 0 0 6px #fff;
+  }
+}
+/* The exit wipe: a skewed slab of alliance color with a bright leading edge, parked off the left of the screen. */
+#winnerRevealWipe {
+  position: absolute;
+  top: -10%;
+  left: -20vw;
+  width: 140vw;
+  height: 120%;
+  background: var(--reveal-color);
+  transform: translateX(-155vw) skewX(-12deg);
+}
+#winnerReveal[data-winner=tie] #winnerRevealWipe {
+  background: linear-gradient(90deg, #ff5571, #ffd166 50%, #4da3ff);
+}
+#winnerRevealWipe::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -18px;
+  width: 18px;
+  height: 100%;
+  background: #fff;
+  box-shadow: 0 0 40px 10px rgba(255, 255, 255, 0.6);
+}
+
+/* Winner reveal background layers, back to front. All of them are tinted by --reveal-color, so they sit in neutral
+   silver through the build-up, flicker with the roulette and flood with the winner's color at the reveal. */
+#winnerRevealGrid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.12;
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 12%, #000 38%, transparent 78%);
+  mask-image: radial-gradient(circle at 50% 50%, transparent 12%, #000 38%, transparent 78%);
+}
+#winnerRevealGrid path {
+  fill: none;
+  stroke: var(--reveal-color);
+  stroke-width: 1.2;
+}
+/* A slowly turning sunburst behind the emblem. */
+#winnerRevealRays {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 250vmax;
+  height: 250vmax;
+  margin: -125vmax 0 0 -125vmax;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--reveal-color) 50%, transparent) 0deg 3deg,
+    transparent 3deg 15deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 42%);
+  mask-image: radial-gradient(circle, #000 0%, transparent 42%);
+  opacity: 0.14;
+  animation: reveal-rays-spin 60s linear infinite;
+}
+@keyframes reveal-rays-spin {
+  to { transform: rotate(360deg); }
+}
+/* Glyph rain and drifting dust, kept clear of the middle so the text always reads cleanly. */
+#winnerRevealAmbient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 50%, transparent 22%, #000 55%);
+  mask-image: radial-gradient(ellipse at 50% 50%, transparent 22%, #000 55%);
+}
+/* A pulse of color on every flip of the roulette. */
+#winnerRevealStrobe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--reveal-color) 45%, transparent) 0%,
+    transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+#winnerRevealWhiteout {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 50%, #fff 0%, color-mix(in srgb, var(--reveal-color) 40%, #fff) 60%);
+  opacity: 0;
+  pointer-events: none;
+}
+.reveal-shockwave {
+  stroke-width: 5;
+  opacity: 0;
+}
+/* Broadcast frame: corner brackets and scrolling tickers along the top and bottom edges. */
+#winnerRevealHud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.reveal-corner {
+  position: absolute;
+  width: 70px;
+  height: 70px;
+  border: 0 solid var(--reveal-color);
+  opacity: 0;
+}
+.reveal-corner[data-corner=top-left] {
+  top: 36px;
+  left: 36px;
+  border-top-width: 3px;
+  border-left-width: 3px;
+}
+.reveal-corner[data-corner=top-right] {
+  top: 36px;
+  right: 36px;
+  border-top-width: 3px;
+  border-right-width: 3px;
+}
+.reveal-corner[data-corner=bottom-left] {
+  bottom: 36px;
+  left: 36px;
+  border-bottom-width: 3px;
+  border-left-width: 3px;
+}
+.reveal-corner[data-corner=bottom-right] {
+  bottom: 36px;
+  right: 36px;
+  border-bottom-width: 3px;
+  border-right-width: 3px;
+}
+.reveal-ticker {
+  position: absolute;
+  left: 140px;
+  right: 140px;
+  height: 30px;
+  overflow: hidden;
+  opacity: 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.reveal-ticker[data-edge=top] {
+  top: 50px;
+}
+.reveal-ticker[data-edge=bottom] {
+  bottom: 50px;
+}
+.reveal-ticker-track {
+  display: inline-block;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--reveal-color) 70%, #8a99ad);
+  font-family: "FuturaLTBold";
+  font-size: 17px;
+  line-height: 30px;
+  letter-spacing: 0.3em;
+  animation: reveal-ticker-scroll 40s linear infinite;
+}
+.reveal-ticker[data-edge=bottom] .reveal-ticker-track {
+  animation-direction: reverse;
+}
+@keyframes reveal-ticker-scroll {
+  to { transform: translateX(-50%); }
+}

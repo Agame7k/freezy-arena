@@ -44,6 +44,16 @@
         $(`#${blueSide}PlayoffAlliance`).text(currentMatch.PlayoffBlueAlliance);
         $(".playoff-alliance").show();
 
+        // In playoffs a yellow card belongs to the whole alliance, so it's flagged once with a glyph on the alliance's
+        // team column rather than on each team.
+        [[redSide, ["R1", "R2", "R3"]], [blueSide, ["B1", "B2", "B3"]]].forEach(function ([side, stations]) {
+          const allianceCarded = stations.some(function (station) {
+            return data.Teams[station]?.YellowCard;
+          });
+          $(`#${side}Teams`).attr("data-alliance-card", allianceCarded ? "yellow" : null);
+          $(`#${side}Teams > div`).attr("data-yellow-card", false);
+        });
+
         if (data.Matchup.NumWinsToAdvance > 1) {
           $(`#${redSide}PlayoffAllianceWins`).text(data.Matchup.RedAllianceWins);
           $(`#${blueSide}PlayoffAllianceWins`).text(data.Matchup.BlueAllianceWins);
@@ -55,6 +65,7 @@
         $(`#${redSide}PlayoffAlliance`).text("");
         $(`#${blueSide}PlayoffAlliance`).text("");
         $(".playoff-alliance").hide();
+        $(".teams").removeAttr("data-alliance-card");
         $("#playoffSeriesStatus").hide();
       }
 

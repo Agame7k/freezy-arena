@@ -46,6 +46,7 @@ func TestWallDisplayWebsocket(t *testing.T) {
 	readWebsocketType(t, ws, "matchLoad")
 	readWebsocketType(t, ws, "matchTime")
 	readWebsocketType(t, ws, "realtimeScore")
+	readWebsocketType(t, ws, "scorePosted")
 
 	// Run through a match cycle.
 	web.arena.MatchLoadNotifier.Notify()

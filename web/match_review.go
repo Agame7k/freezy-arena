@@ -33,6 +33,9 @@ type MatchReviewEditAlliance struct {
 	Teams             []int
 	Summary           *game.ScoreSummary
 	ShowRankingPoints bool
+	// In playoffs a card is given to the whole alliance rather than to individual teams.
+	AllianceCards   bool
+	PlayoffAlliance int
 }
 
 type MatchReviewSummaryResponse struct {
@@ -112,12 +115,16 @@ func (web *Web) matchReviewEditGetHandler(w http.ResponseWriter, r *http.Request
 			Teams:             []int{match.Red1, match.Red2, match.Red3},
 			Summary:           matchResult.RedScoreSummary(),
 			ShowRankingPoints: match.Type != model.Playoff,
+			AllianceCards:     match.Type == model.Playoff,
+			PlayoffAlliance:   match.PlayoffRedAlliance,
 		},
 		{
 			Alliance:          "blue",
 			Teams:             []int{match.Blue1, match.Blue2, match.Blue3},
 			Summary:           matchResult.BlueScoreSummary(),
 			ShowRankingPoints: match.Type != model.Playoff,
+			AllianceCards:     match.Type == model.Playoff,
+			PlayoffAlliance:   match.PlayoffBlueAlliance,
 		},
 	}
 	data := struct {
@@ -198,6 +205,10 @@ func (web *Web) matchReviewEditPostHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	normalizeMatchResult(&matchResult)
+	if match.Type == model.Playoff {
+		// Cards apply to the whole alliance in playoffs.
+		matchResult.ApplyPlayoffAllianceCards(match)
+	}
 
 	if isCurrent {
 		// If editing the current match, just save it back to memory.

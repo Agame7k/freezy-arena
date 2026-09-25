@@ -7,6 +7,7 @@ package model
 
 import (
 	"github.com/Team254/cheesy-arena/game"
+	"strconv"
 )
 
 type MatchResult struct {
@@ -70,6 +71,35 @@ func (matchResult *MatchResult) RedScoreSummary() *game.ScoreSummary {
 // Calculates and returns the summary fields used for ranking and display for the blue alliance.
 func (matchResult *MatchResult) BlueScoreSummary() *game.ScoreSummary {
 	return matchResult.BlueScore.Summarize(matchResult.RedScore)
+}
+
+// How serious each card is, for picking the one that applies when several were given.
+var cardSeverity = map[string]int{"": 0, "yellow": 1, "red": 2, "dq": 3}
+
+// In playoffs a card applies to the whole alliance, so this gives every team on each alliance the most serious card
+// any of its teams received. Keeps a playoff result consistent however its cards were entered.
+func (matchResult *MatchResult) ApplyPlayoffAllianceCards(match *Match) {
+	applyAllianceCard(matchResult.RedCards, [3]int{match.Red1, match.Red2, match.Red3})
+	applyAllianceCard(matchResult.BlueCards, [3]int{match.Blue1, match.Blue2, match.Blue3})
+}
+
+func applyAllianceCard(cards map[string]string, teamIds [3]int) {
+	allianceCard := ""
+	for _, card := range cards {
+		if cardSeverity[card] > cardSeverity[allianceCard] {
+			allianceCard = card
+		}
+	}
+	for _, teamId := range teamIds {
+		if teamId == 0 {
+			continue
+		}
+		if allianceCard == "" {
+			delete(cards, strconv.Itoa(teamId))
+		} else {
+			cards[strconv.Itoa(teamId)] = allianceCard
+		}
+	}
 }
 
 // Checks the score for disqualifications or a tie and adjusts it appropriately.

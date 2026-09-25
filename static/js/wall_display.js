@@ -113,14 +113,39 @@ const setIntroMode = function (enabled) {
   $("#matchOverlay").attr("data-mode", enabled ? "intro" : null);
 };
 
+// How long the audience display takes, from being switched to the final score, to get from the screen it was on to the
+// start of its winner reveal. The wall starts the same reveal at the same moment, so the two play in step from there.
+// Blank and match were measured; the rest are worked out from the audience display's transitions.
+const audienceRevealStartMs = {
+  blank: 2690,
+  match: 4170,
+  logo: 1000,
+  logoLuma: 2300,
+  bracket: 1000,
+  sponsor: 1950,
+};
+const audienceRevealStartDefaultMs = 4000;
+// Null until the first screen arrives, which is just the current state on connecting rather than a switch to time.
+let lastAudienceScreen = null;
+let revealStartAt = 0;
+let revealData = null;
+
 // Handles a websocket message to change which screen is displayed.
 const handleAudienceDisplayMode = function (targetScreen) {
+  if (targetScreen === "score" && lastAudienceScreen !== null && lastAudienceScreen !== "score") {
+    revealStartAt = Date.now() + (audienceRevealStartMs[lastAudienceScreen] ?? audienceRevealStartDefaultMs);
+  } else if (targetScreen === "score") {
+    // Connecting while the score is already up: just show it, without replaying a reveal that already happened.
+    revealStartAt = null;
+  }
+  lastAudienceScreen = targetScreen;
   if (targetScreen === "logoLuma") {
     targetScreen = "logo";
   }
   if (
     targetScreen !== "intro" &&
     targetScreen !== "teamIntro" &&
+    targetScreen !== "score" &&
     targetScreen !== "match" &&
     targetScreen !== "timeout" &&
     targetScreen !== "logo"
@@ -362,6 +387,39 @@ const transitionTimeoutToIntro = function (callback) {
   });
 };
 
+// Handles a websocket message to populate the final score.
+const handleScorePosted = function (data) {
+  MatchIntro.buildResult(data, redSide, blueSide, DisplayShared.getAvatarUrl);
+  revealData = WinnerReveal.buildData(data, redSide);
+};
+
+// Plays the same winner reveal as the audience display, started at the same moment so the two run in step (muted, as
+// the audience display carries the sound), then the final score comes up on the team intro's stage as the reveal
+// wipes away. Skipped if the operator has already moved on before the reveal is due to start.
+const transitionBlankToScore = function (callback) {
+  hideMessage(async function () {
+    while (revealStartAt !== null && Date.now() < revealStartAt && transitionQueue.length === 0) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 50);
+      });
+    }
+    if (transitionQueue.length > 0) {
+      callback();
+      return;
+    }
+    if (revealStartAt !== null && revealData !== null) {
+      await WinnerReveal.play(revealData, redSide, {muted: true});
+    }
+    MatchIntro.play({}, "result").then(callback);
+  });
+};
+
+const transitionScoreToBlank = function (callback) {
+  MatchIntro.leave(true).then(function () {
+    showMessage(callback);
+  });
+};
+
 // The full-screen team intro holds until the operator moves on; it then splits apart as the next screen comes in.
 const transitionBlankToTeamIntro = function (callback) {
   hideMessage(function () {
@@ -457,6 +515,9 @@ $(function () {
     realtimeScore: function (event) {
       handleRealtimeScore(event.data);
     },
+    scorePosted: function (event) {
+      handleScorePosted(event.data);
+    },
   });
 
   // Map how to transition from one screen to another. Missing links between screens indicate that first we
@@ -466,6 +527,7 @@ $(function () {
       intro: transitionBlankToIntro,
       logo: transitionBlankToLogo,
       match: transitionBlankToMatch,
+      score: transitionBlankToScore,
       teamIntro: transitionBlankToTeamIntro,
       timeout: transitionBlankToTimeout,
     },
@@ -480,6 +542,9 @@ $(function () {
     match: {
       blank: transitionMatchToBlank,
       intro: transitionMatchToIntro,
+    },
+    score: {
+      blank: transitionScoreToBlank,
     },
     teamIntro: {
       blank: transitionTeamIntroToBlank,

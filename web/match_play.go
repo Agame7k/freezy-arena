@@ -406,7 +406,8 @@ func (web *Web) commitMatchScore(match *model.Match, matchResult *model.MatchRes
 	var updatedRankings game.Rankings
 
 	if match.Type == model.Playoff {
-		// Adjust the score if necessary for a playoff DQ.
+		// Cards apply to the whole alliance in playoffs; then adjust the score if necessary for a playoff DQ.
+		matchResult.ApplyPlayoffAllianceCards(match)
 		matchResult.CorrectPlayoffScore()
 	}
 
