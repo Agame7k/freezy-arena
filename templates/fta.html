@@ -1,0 +1,273 @@
+{{/*
+Copyright 2026 Team 254. All Rights Reserved.
+
+FTA console: live station health, start blockers, the fault log, per-team history and notes, and match timelines.
+Laid out for a phone first, spreading out to side-by-side panes on a tablet or laptop.
+*/}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>FTA - {{.EventSettings.Name}} - Cheesy Arena</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0f1216">
+  <link rel="shortcut icon" href="/static/img/favicon.ico">
+  <link rel="stylesheet" href="/static/css/lib/bootstrap-icons.min.css"/>
+  <link rel="stylesheet" href="/static/css/fta.css"/>
+</head>
+<body data-tab="field">
+<header id="topbar">
+  <a id="homeLink" href="/" title="Main menu" aria-label="Main menu"><i class="bi-list"></i></a>
+  <div id="matchInfo">
+    <div id="matchName">&nbsp;</div>
+    <div id="matchState">&nbsp;</div>
+  </div>
+  <div id="matchClock">0:00</div>
+  <div id="fieldHealth" aria-label="Field equipment status">
+    <span class="health-dot" id="apHealth" title="Access point"><i class="bi-wifi"></i></span>
+    <span class="health-dot" id="switchHealth" title="Network switch"><i class="bi-hdd-network"></i></span>
+    <span class="health-dot" id="plcHealth" title="PLC"><i class="bi-cpu"></i></span>
+  </div>
+  <button type="button" id="alertToggle" class="icon-button" title="Sound and vibration alerts for new faults"
+          aria-pressed="false" onclick="toggleAlerts();"><i class="bi-bell-slash"></i></button>
+</header>
+
+<section id="readiness" data-state="blocked" aria-live="polite">
+  <div class="readiness-row">
+    <button type="button" id="readinessSummary" onclick="toggleBlockers();" aria-expanded="true">
+      <i id="readinessIcon" class="bi-hourglass-split"></i>
+      <span id="readinessText">Connecting…</span>
+      <i class="bi-chevron-down readiness-chevron"></i>
+    </button>
+    <button type="button" id="ftaReadyButton" data-ready="false" aria-pressed="false" onclick="toggleFtaReady();"
+            title="Same switch as the head referee panel (R)">
+      <i class="bi-x-octagon"></i> <span>FTA Not Ready</span>
+    </button>
+  </div>
+  <ol id="blockerList"></ol>
+</section>
+
+<nav id="tabs" role="tablist">
+  <button type="button" role="tab" data-tab="field" onclick="showTab('field');">
+    <i class="bi-grid-3x2"></i> Field
+  </button>
+  <button type="button" role="tab" data-tab="faults" onclick="showTab('faults');">
+    <i class="bi-exclamation-triangle"></i> Faults <span id="faultCount" class="count" data-count="0">0</span>
+  </button>
+  <button type="button" role="tab" data-tab="upnext" onclick="showTab('upnext');">
+    <i class="bi-hourglass-split"></i> Up next <span id="upnextCount" class="count" data-count="0">0</span>
+  </button>
+  <button type="button" role="tab" data-tab="teams" onclick="showTab('teams');">
+    <i class="bi-people"></i> Teams
+  </button>
+  <button type="button" role="tab" data-tab="timeline" onclick="showTab('timeline');">
+    <i class="bi-bar-chart-steps"></i> Timeline
+  </button>
+</nav>
+
+<main id="panes">
+  <section id="fieldPane" class="pane" data-pane="field">
+    {{template "alliance" dict "alliance" "red" "prefix" "R"}}
+    {{template "alliance" dict "alliance" "blue" "prefix" "B"}}
+  </section>
+
+  <section id="faultsPane" class="pane" data-pane="faults">
+    <div class="pane-header">
+      <h2>Fault log <small>this match</small></h2>
+      <div class="filter-chips" role="group" aria-label="Filter faults">
+        <button type="button" data-filter="all" aria-pressed="true" onclick="setFaultFilter('all');">All</button>
+        <button type="button" data-filter="bad" aria-pressed="false" onclick="setFaultFilter('bad');">Critical</button>
+        <button type="button" data-filter="R" aria-pressed="false" onclick="setFaultFilter('R');">Red</button>
+        <button type="button" data-filter="B" aria-pressed="false" onclick="setFaultFilter('B');">Blue</button>
+      </div>
+      <button type="button" class="text-button" onclick="copyFaultLog(this);"><i class="bi-clipboard"></i> Copy</button>
+    </div>
+    <p id="faultEmpty" class="empty">No faults logged since this match was loaded.</p>
+    <ol id="faultList" class="fault-list"></ol>
+  </section>
+
+  <section id="upnextPane" class="pane" data-pane="upnext">
+    <div class="pane-header">
+      <h2>Up next <small>visit flagged pits before they queue</small></h2>
+      <button type="button" class="icon-button" title="Refresh" onclick="loadWatchlist();">
+        <i class="bi-arrow-clockwise"></i>
+      </button>
+    </div>
+    <p id="upnextEmpty" class="empty">No unplayed matches after this one.</p>
+    <ol id="upnextList" class="upnext-list"></ol>
+  </section>
+
+  <section id="teamsPane" class="pane" data-pane="teams">
+    <div class="pane-header">
+      <h2>Teams <small>most trouble first</small></h2>
+      <div class="filter-chips" role="group" aria-label="Filter teams">
+        <button type="button" data-team-filter="flagged" aria-pressed="true" onclick="setTeamFilter('flagged');">
+          Flagged
+        </button>
+        <button type="button" data-team-filter="all" aria-pressed="false" onclick="setTeamFilter('all');">All</button>
+      </div>
+    </div>
+    <label class="search-wrap">
+      <i class="bi-search" aria-hidden="true"></i>
+      <span class="visually-hidden">Find a team</span>
+      <input id="teamSearch" type="search" inputmode="numeric" placeholder="Team number or name" autocomplete="off"
+             oninput="renderTeams();" onkeydown="teamSearchKeydown(event);">
+    </label>
+    <p id="teamsEmpty" class="empty">No teams flagged. Nice.</p>
+    <ol id="teamList" class="team-list"></ol>
+  </section>
+
+  <section id="timelinePane" class="pane" data-pane="timeline">
+    <div class="pane-header">
+      <h2>Timeline</h2>
+      <label class="select-wrap">
+        <span class="visually-hidden">Match</span>
+        <select id="timelineMatch" onchange="loadTimeline(this.value);"></select>
+      </label>
+      <button type="button" class="icon-button" title="Refresh" onclick="loadTimeline($('#timelineMatch').val());">
+        <i class="bi-arrow-clockwise"></i>
+      </button>
+    </div>
+    <div id="timeline">
+      <p class="empty">Pick a match to see how each robot's connection held up.</p>
+    </div>
+    <p id="timelineDetail" class="timeline-detail" aria-live="polite"></p>
+    <ul class="legend">
+      <li><span class="swatch" data-level="4"></span>Code running</li>
+      <li><span class="swatch" data-level="3"></span>roboRIO, no code</li>
+      <li><span class="swatch" data-level="2"></span>Radio only</li>
+      <li><span class="swatch" data-level="1"></span>DS only</li>
+      <li><span class="swatch" data-level="0"></span>Nothing</li>
+      <li><span class="swatch battery-swatch"></span>Battery</li>
+    </ul>
+  </section>
+</main>
+
+<div id="scrim" hidden onclick="closeTeamPanel();"></div>
+<aside id="teamPanel" aria-hidden="true" aria-labelledby="panelTeamNumber" role="dialog">
+  <div class="panel-grip" aria-hidden="true"></div>
+  <header class="panel-header">
+    <div>
+      <div class="panel-title"><span id="panelTeamNumber"></span> <span id="panelStation" class="station-chip"></span>
+      </div>
+      <div id="panelTeamName" class="panel-subtitle"></div>
+    </div>
+    <button type="button" class="icon-button" onclick="closeTeamPanel();" aria-label="Close"><i class="bi-x-lg"></i>
+    </button>
+  </header>
+  <div class="panel-body">
+    <section id="panelRisk" class="panel-section" hidden>
+      <h3>Watch for</h3>
+      <ul id="panelReasons" class="reason-list"></ul>
+    </section>
+
+    <section id="panelLive" class="panel-section">
+      <h3>Right now</h3>
+      <ul id="panelChecks" class="checklist"></ul>
+      <button type="button" id="bypassButton" class="text-button" onclick="toggleBypass();" hidden></button>
+    </section>
+
+    <section class="panel-section">
+      <h3>Add a note</h3>
+      <div id="noteTags" class="tag-chips" role="radiogroup" aria-label="Note category">
+        {{range $tag := .NoteTags}}
+        <button type="button" role="radio" data-tag="{{$tag}}" aria-checked="false"
+                onclick="selectNoteTag('{{$tag}}');">{{$tag}}</button>
+        {{end}}
+      </div>
+      <div class="quick-notes">
+        <button type="button" data-tag="radio" onclick="quickNote(this);">Rebooted radio</button>
+        <button type="button" data-tag="ethernet" onclick="quickNote(this);">Reseated Ethernet</button>
+        <button type="button" data-tag="battery" onclick="quickNote(this);">Swapped battery</button>
+        <button type="button" data-tag="can" onclick="quickNote(this);">Loose CAN wiring</button>
+        <button type="button" data-tag="ds" onclick="quickNote(this);">Fixed DS settings/firewall</button>
+        <button type="button" data-tag="code" onclick="quickNote(this);">Code crashed/restarted</button>
+      </div>
+      <form id="noteForm" onsubmit="submitNote(event);">
+        <textarea id="noteText" rows="2" placeholder="What happened and what was done…" required></textarea>
+        <button type="submit" class="primary-button"><i class="bi-plus-lg"></i> Add note</button>
+      </form>
+    </section>
+
+    <section class="panel-section">
+      <h3>Standing notes <small>shown on the field monitor</small></h3>
+      <textarea id="pinnedNotes" rows="2" placeholder="Anything every FTA should know about this team"></textarea>
+      <button type="button" id="savePinnedNotes" class="text-button" onclick="savePinnedNotes();" disabled>
+        <i class="bi-check2"></i> Save
+      </button>
+    </section>
+
+    <section class="panel-section">
+      <h3>History</h3>
+      <div id="panelSummary" class="summary-tiles"></div>
+      <div class="table-scroll">
+        <table id="panelMatches" class="history-table">
+          <thead>
+          <tr><th>Match</th><th>Stn</th><th>Faults</th><th>Min V</th><th>Down</th><th>Max trip</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="panelMatchesEmpty" class="empty">No matches recorded yet.</p>
+    </section>
+
+    <section class="panel-section">
+      <h3>Notes</h3>
+      <ol id="panelNotes" class="note-list"></ol>
+      <p id="panelNotesEmpty" class="empty">No notes yet.</p>
+    </section>
+
+    <section class="panel-section">
+      <h3>Recent faults</h3>
+      <ol id="panelEvents" class="fault-list compact"></ol>
+      <p id="panelEventsEmpty" class="empty">No faults recorded.</p>
+    </section>
+  </div>
+</aside>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/static/js/lib/jquery.min.js"></script>
+<script src="/static/js/lib/jquery.json-2.4.min.js"></script>
+<script src="/static/js/lib/jquery.websocket-0.0.1.js"></script>
+<script src="/static/js/cheesy-websocket.js"></script>
+<script src="/static/js/match_timing.js"></script>
+<script src="/static/js/fta.js"></script>
+</body>
+</html>
+
+{{define "alliance"}}
+    <div class="alliance" data-alliance="{{.alliance}}">
+      {{$prefix := .prefix}}
+      {{range $position := seq 3}}
+      {{$station := printf "%s%d" $prefix $position}}
+      <article class="station" id="station{{$station}}" data-station="{{$station}}" data-health="empty"
+               tabindex="0" role="button" aria-label="Station {{$station}} details">
+        <header class="station-header">
+          <span class="station-id">{{$station}}</span>
+          <span class="team-number">—</span>
+          <span class="team-name"></span>
+        </header>
+        <ol class="chain" aria-label="Connection chain">
+          <li data-link="eth" title="Driver station Ethernet cable">ETH</li>
+          <li data-link="ds" title="Driver station software connected">DS</li>
+          <li data-link="radio" title="Robot radio connected">Radio</li>
+          <li data-link="rio" title="roboRIO reachable">RIO</li>
+          <li data-link="code" title="Robot code running">Code</li>
+        </ol>
+        <dl class="metrics">
+          <div data-metric="battery"><dt>Battery</dt><dd>—</dd></div>
+          <div data-metric="trip"><dt>Trip</dt><dd>—</dd></div>
+          <div data-metric="missed"><dt>Lost</dt><dd>—</dd></div>
+          <div data-metric="snr" title="Radio signal-to-noise ratio"><dt>SNR</dt><dd>—</dd></div>
+          <div data-metric="bandwidth"><dt>Mbit/s</dt><dd>—</dd></div>
+        </dl>
+        <ul class="flags"></ul>
+        <p class="waiting"></p>
+        <p class="pinned-note"></p>
+      </article>
+      {{end}}
+    </div>
+{{end}}
