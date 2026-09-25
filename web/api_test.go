@@ -336,3 +336,22 @@ func TestAllianceStatusApi_Empty(t *testing.T) {
     assert.Nil(t, err)
     assert.Equal(t, expected, actual)
 }
+
+func TestTeamAvatarsApi(t *testing.T) {
+	web := setupTestWeb(t)
+	// Serve files from the repository root, where the avatars and default icon live.
+	t.Chdir("..")
+
+	// A team with no avatar of its own gets the generic default icon.
+	recorder := web.getHttpResponse("/api/teams/99999/avatar")
+	assert.Equal(t, 200, recorder.Code)
+	assert.Equal(t, "image/svg+xml", recorder.Header().Get("Content-Type"))
+
+	// An empty station still gets the blank placeholder.
+	recorder = web.getHttpResponse("/api/teams/0/avatar")
+	assert.Equal(t, 200, recorder.Code)
+	assert.Equal(t, "image/png", recorder.Header().Get("Content-Type"))
+
+	// Browsers must re-check each time, so a cached placeholder is replaced once the real avatar arrives.
+	assert.Equal(t, "no-cache", recorder.Header().Get("Cache-Control"))
+}

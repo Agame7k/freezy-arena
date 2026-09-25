@@ -4,6 +4,7 @@
 */
 
 @import url("/static/css/display_overlay_shared.css");
+@import url("/static/css/match_intro.css");
 
 /* Hidden position; must clear the overlay height plus the match circle's overhang and glow so nothing peeks in. */
 #overlayCentering {

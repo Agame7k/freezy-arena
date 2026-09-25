@@ -4,6 +4,7 @@
 */
 
 @import url("/static/css/display_overlay_shared.css");
+@import url("/static/css/match_intro.css");
 
 #overlayCentering {
   top: -200px;
@@ -52,4 +53,43 @@
   font-size: 1.4vw;
   font-family: "FuturaLTBold";
   color: #fff;
+}
+
+/* Motion styling. The entrances themselves are driven from wall_display.js; these cover the CSS-only pieces. */
+#matchOverlay {
+  position: relative;
+}
+
+/* A band of light that sweeps across the overlay whenever it opens into a new layout (see playSheen). */
+#matchOverlay::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.55) 50%, transparent 60%) no-repeat;
+  background-size: 300% 100%;
+  background-position: 150% 0;
+}
+
+#matchOverlay[data-sheen]::after {
+  animation: wall-sheen 1.2s cubic-bezier(0.65, 0, 0.35, 1) 0.3s both;
+}
+
+@keyframes wall-sheen {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+/* The standing message glows softly while it waits. */
+#message {
+  animation: message-glow 3.5s ease-in-out infinite;
+}
+
+@keyframes message-glow {
+  0%, 100% { text-shadow: 0 0 6px rgba(255, 255, 255, 0.2); }
+  50% { text-shadow: 0 0 22px rgba(255, 209, 102, 0.85), 0 0 44px rgba(255, 209, 102, 0.4); }
 }

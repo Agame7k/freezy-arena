@@ -34,6 +34,85 @@ const overlayTopOffset = 110;
 const timeoutDetailsIn = $("#timeoutDetails").css("width");
 const timeoutDetailsOut = "570px";
 
+// Entrance flourishes layered on top of the jQuery transitions below. They use a backwards fill only, so they hold their
+// starting frame through any delay and then leave no inline style behind once finished.
+const flourishEase = "cubic-bezier(0.16, 1, 0.3, 1)";
+const flourishPop = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+const flourish = function (selector, keyframes, duration, delay = 0, stagger = 0, easing = flourishEase) {
+  $(selector).each(function (i) {
+    this.animate(keyframes, {duration: duration, delay: delay + i * stagger, easing: easing, fill: "backwards"});
+  });
+};
+
+// Sweeps a band of light across the overlay whenever it opens into a new layout.
+const playSheen = function () {
+  const overlay = $("#matchOverlay");
+  overlay.removeAttr("data-sheen");
+  void overlay[0].offsetWidth;
+  overlay.attr("data-sheen", "");
+};
+
+// Team numbers glide in from each side's outer edge, one after another.
+const cascadeTeams = function (delay) {
+  flourish("#leftTeams > div", [
+    {opacity: 0, transform: "translateX(-24px)", filter: "blur(6px)"},
+    {opacity: 1, transform: "translateX(0px)", filter: "blur(0px)"},
+  ], 600, delay, 80);
+  flourish("#rightTeams > div", [
+    {opacity: 0, transform: "translateX(24px)", filter: "blur(6px)"},
+    {opacity: 1, transform: "translateX(0px)", filter: "blur(0px)"},
+  ], 600, delay, 80);
+};
+
+const popAvatars = function (delay) {
+  flourish(".avatar", [
+    {opacity: 0, transform: "scale(0.3) rotate(-30deg)"},
+    {opacity: 1, transform: "scale(1) rotate(0deg)"},
+  ], 600, delay, 60, flourishPop);
+};
+
+// The center circle spins and punches whenever the overlay changes layout.
+const spinCircle = function () {
+  flourish("#matchCircle", [
+    {transform: "rotate(-200deg) scale(0.6)"},
+    {transform: "rotate(0deg) scale(1)"},
+  ], 900, 0, 0, flourishPop);
+};
+
+// The auxiliary fuel/hub boxes rise up from behind the overlay.
+const riseScoreAux = function (delay) {
+  flourish("#leftScoreAux, #rightScoreAux", [
+    {transform: "translateY(60px) scale(0.85)", filter: "blur(6px)"},
+    {transform: "translateY(0px) scale(1)", filter: "blur(0px)"},
+  ], 800, delay, 100);
+};
+
+// The score numbers and timer slam in, and the auxiliary boxes rise up behind them.
+const revealScores = function () {
+  flourish(".score-number", [
+    {transform: "scale(1.8)", filter: "blur(8px)"},
+    {transform: "scale(1)", filter: "blur(0px)"},
+  ], 700, 0, 90, flourishPop);
+  flourish("#matchTime", [{transform: "translateY(12px)", filter: "blur(8px)"}, {transform: "none", filter: "none"}],
+    700, 150);
+  riseScoreAux(100);
+};
+
+const revealTimeoutDetails = function (delay) {
+  flourish("#timeoutBreakDescription", [
+    {transform: "translateX(40px)", filter: "blur(6px)"},
+    {transform: "none", filter: "none"},
+  ], 700, delay);
+  flourish("#timeoutNextMatch", [
+    {transform: "translateX(-40px)", filter: "blur(6px)"},
+    {transform: "none", filter: "none"},
+  ], 700, delay + 80);
+};
+
+const setIntroMode = function (enabled) {
+  $("#matchOverlay").attr("data-mode", enabled ? "intro" : null);
+};
+
 // Handles a websocket message to change which screen is displayed.
 const handleAudienceDisplayMode = function (targetScreen) {
   if (targetScreen === "logoLuma") {
@@ -41,6 +120,7 @@ const handleAudienceDisplayMode = function (targetScreen) {
   }
   if (
     targetScreen !== "intro" &&
+    targetScreen !== "teamIntro" &&
     targetScreen !== "match" &&
     targetScreen !== "timeout" &&
     targetScreen !== "logo"
@@ -90,6 +170,7 @@ const executeTransitionQueue = function () {
 // Handles a websocket message to update the teams for the current match.
 const handleMatchLoad = function (data) {
   currentMatch = DisplayShared.handleMatchLoad(data, redSide, blueSide);
+  MatchIntro.build(data, redSide, blueSide, DisplayShared.getAvatarUrl);
 };
 
 // Handles a websocket message to update the match time countdown.
@@ -113,6 +194,11 @@ const transitionBlankToIntro = function (callback) {
     $(".teams").css("display", "flex");
     $(".avatars").css("display", "flex");
     $(".avatars").css("opacity", 1);
+    setIntroMode(true);
+    playSheen();
+    spinCircle();
+    cascadeTeams(150);
+    popAvatars(300);
     $(".score").transition({queue: false, width: scoreMid}, 500, "ease", function () {
       $("#eventMatchInfo").css("display", "flex");
       $("#eventMatchInfo").transition({queue: false, height: eventMatchInfoDown}, 500, "ease", callback);
@@ -127,6 +213,9 @@ const transitionBlankToLogo = function (callback) {
 const transitionBlankToMatch = function (callback) {
   hideMessage(function () {
     $(".teams").css("display", "flex");
+    playSheen();
+    spinCircle();
+    cascadeTeams(150);
     $(".score-fields").css("display", "flex");
     $(".score-fields").transition({queue: false, width: scoreFieldsOut}, 500, "ease");
     $("#logo").transition({queue: false, top: logoUp}, 500, "ease");
@@ -137,6 +226,7 @@ const transitionBlankToMatch = function (callback) {
       $("#matchTime").transition({queue: false, opacity: 1}, 750, "ease");
       $(".score-fields").transition({queue: false, opacity: 1}, 750, "ease");
       $(".score-aux").transition({queue: false, opacity: 1}, 750, "ease");
+      revealScores();
       hubActiveController.restartPendingHubActiveIndicators();
     });
   });
@@ -144,15 +234,18 @@ const transitionBlankToMatch = function (callback) {
 
 const transitionBlankToTimeout = function (callback) {
   hideMessage(function () {
+    spinCircle();
     $("#timeoutDetails").transition({queue: false, width: timeoutDetailsOut}, 500, "ease");
     $("#logo").transition({queue: false, top: logoUp}, 500, "ease", function () {
       $(".timeout-detail").transition({queue: false, opacity: 1}, 750, "ease");
+      revealTimeoutDetails(0);
       $("#matchTime").transition({queue: false, opacity: 1}, 750, "ease", callback);
     });
   });
 };
 
 const transitionIntroToBlank = function (callback) {
+  setIntroMode(false);
   $("#eventMatchInfo").transition({queue: false, height: eventMatchInfoUp}, 500, "ease", function () {
     $("#eventMatchInfo").hide();
     $(".score").transition({queue: false, width: scoreIn}, 500, "ease", function () {
@@ -165,6 +258,8 @@ const transitionIntroToBlank = function (callback) {
 };
 
 const transitionIntroToMatch = function (callback) {
+  setIntroMode(false);
+  playSheen();
   $(".avatars").transition({queue: false, opacity: 0}, 500, "ease", function () {
     $(".avatars").hide();
   });
@@ -176,11 +271,13 @@ const transitionIntroToMatch = function (callback) {
     $("#matchTime").transition({queue: false, opacity: 1}, 750, "ease", callback);
     $(".score-fields").transition({queue: false, opacity: 1}, 750, "ease");
     $(".score-aux").transition({queue: false, opacity: 1}, 750, "ease");
+    revealScores();
     hubActiveController.restartPendingHubActiveIndicators();
   });
 };
 
 const transitionIntroToTimeout = function (callback) {
+  setIntroMode(false);
   $("#eventMatchInfo").transition({queue: false, height: eventMatchInfoUp}, 500, "ease", function () {
     $("#eventMatchInfo").hide();
     $(".score").transition({queue: false, width: scoreIn}, 500, "ease", function () {
@@ -190,6 +287,7 @@ const transitionIntroToTimeout = function (callback) {
       $("#timeoutDetails").transition({queue: false, width: timeoutDetailsOut}, 500, "ease");
       $("#logo").transition({queue: false, top: logoUp}, 500, "ease", function () {
         $(".timeout-detail").transition({queue: false, opacity: 1}, 750, "ease");
+        revealTimeoutDetails(0);
         $("#matchTime").transition({queue: false, opacity: 1}, 750, "ease", callback);
       });
     });
@@ -227,6 +325,8 @@ const transitionMatchToIntro = function (callback) {
     $(".score").transition({queue: false, width: scoreMid}, 500, "ease", function () {
       $(".score-fields").hide();
       $(".avatars").css("display", "flex");
+      setIntroMode(true);
+      popAvatars(0);
       $(".avatars").transition({queue: false, opacity: 1}, 500, "ease", callback);
     });
   });
@@ -250,12 +350,39 @@ const transitionTimeoutToIntro = function (callback) {
       $(".avatars").css("display", "flex");
       $(".avatars").css("opacity", 1);
       $(".teams").css("display", "flex");
+      setIntroMode(true);
+      playSheen();
+      cascadeTeams(150);
+      popAvatars(300);
       $(".score").transition({queue: false, width: scoreMid}, 500, "ease", function () {
         $("#eventMatchInfo").show();
         $("#eventMatchInfo").transition({queue: false, height: eventMatchInfoDown}, 500, "ease", callback);
       });
     });
   });
+};
+
+// The full-screen team intro holds until the operator moves on; it then splits apart as the next screen comes in.
+const transitionBlankToTeamIntro = function (callback) {
+  hideMessage(function () {
+    MatchIntro.play().then(callback);
+  });
+};
+
+const transitionTeamIntroToBlank = function (callback) {
+  MatchIntro.leave(true).then(function () {
+    showMessage(callback);
+  });
+};
+
+const transitionTeamIntroToIntro = function (callback) {
+  MatchIntro.leave(true);
+  transitionBlankToIntro(callback);
+};
+
+const transitionTeamIntroToMatch = function (callback) {
+  MatchIntro.leave(true);
+  transitionBlankToMatch(callback);
 };
 
 const showMessage = function (callback) {
@@ -266,6 +393,10 @@ const showMessage = function (callback) {
     return;
   }
   $("#message").show();
+  flourish("#message", [
+    {transform: "translateY(24px)", filter: "blur(10px)", letterSpacing: "0.4em"},
+    {transform: "none", filter: "none", letterSpacing: "normal"},
+  ], 1100);
   $("#message").transition({queue: false, opacity: 1}, 750, "ease", callback);
 };
 
@@ -335,6 +466,7 @@ $(function () {
       intro: transitionBlankToIntro,
       logo: transitionBlankToLogo,
       match: transitionBlankToMatch,
+      teamIntro: transitionBlankToTeamIntro,
       timeout: transitionBlankToTimeout,
     },
     intro: {
@@ -348,6 +480,11 @@ $(function () {
     match: {
       blank: transitionMatchToBlank,
       intro: transitionMatchToIntro,
+    },
+    teamIntro: {
+      blank: transitionTeamIntroToBlank,
+      intro: transitionTeamIntroToIntro,
+      match: transitionTeamIntroToMatch,
     },
     timeout: {
       blank: transitionTimeoutToBlank,

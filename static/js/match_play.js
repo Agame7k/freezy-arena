@@ -68,11 +68,18 @@ const discardResults = function () {
   websocket.send("discardResults");
 };
 
-// Switches the audience display to the match intro screen.
+// Switches the audience display to the full-screen team intro, which holds until the overlay is shown.
+const showTeamIntro = function () {
+  $("input[name=audienceDisplay][value=teamIntro]").prop("checked", true);
+  setAudienceDisplay();
+  $("#showTeamIntro").prop("disabled", true);
+};
+
+// Switches the audience display to the pre-match overlay.
 const showOverlay = function () {
   $("input[name=audienceDisplay][value=intro]").prop("checked", true);
   setAudienceDisplay();
-  $("#showOverlay").prop("disabled", true);
+  $("#showOverlay, #showTeamIntro").prop("disabled", true);
 }
 
 // Sends a websocket message to change what the audience display is showing.
@@ -238,8 +245,8 @@ const handleArenaStatus = function (data) {
     case "AUTO_PERIOD":
     case "PAUSE_PERIOD":
     case "TELEOP_PERIOD":
-      $("#showOverlay").prop("disabled", true);
-      $("#introRadio").prop("disabled", true);
+      $("#showOverlay, #showTeamIntro").prop("disabled", true);
+      $("#introRadio, #teamIntroRadio").prop("disabled", true);
       $("#scoreRadio").prop("disabled", true);
       $("#startMatch").prop("disabled", true);
       $("#abortMatch").prop("disabled", false);
@@ -252,8 +259,8 @@ const handleArenaStatus = function (data) {
       $("#startTimeout").prop("disabled", true);
       break;
     case "POST_MATCH":
-      $("#showOverlay").prop("disabled", true);
-      $("#introRadio").prop("disabled", true);
+      $("#showOverlay, #showTeamIntro").prop("disabled", true);
+      $("#introRadio, #teamIntroRadio").prop("disabled", true);
       $("#scoreRadio").prop("disabled", true);
       $("#startMatch").prop("disabled", true);
       $("#abortMatch").prop("disabled", true);
@@ -266,8 +273,8 @@ const handleArenaStatus = function (data) {
       $("#startTimeout").prop("disabled", true);
       break;
     case "TIMEOUT_ACTIVE":
-      $("#showOverlay").prop("disabled", true);
-      $("#introRadio").prop("disabled", true);
+      $("#showOverlay, #showTeamIntro").prop("disabled", true);
+      $("#introRadio, #teamIntroRadio").prop("disabled", true);
       $("#scoreRadio").prop("disabled", false);
       $("#startMatch").prop("disabled", true);
       $("#abortMatch").prop("disabled", false);
@@ -280,8 +287,8 @@ const handleArenaStatus = function (data) {
       $("#startTimeout").prop("disabled", true);
       break;
     case "POST_TIMEOUT":
-      $("#showOverlay").prop("disabled", false);
-      $("#introRadio").prop("disabled", false);
+      $("#showOverlay, #showTeamIntro").prop("disabled", false);
+      $("#introRadio, #teamIntroRadio").prop("disabled", false);
       $("#scoreRadio").prop("disabled", false);
       $("#startMatch").prop("disabled", true);
       $("#abortMatch").prop("disabled", true);
@@ -375,8 +382,8 @@ const handleMatchLoad = function (data) {
   $("#playoffBlueAllianceInfo").html(formatPlayoffAllianceInfo(data.Match.PlayoffBlueAlliance, data.BlueOffFieldTeams));
 
   $("#substituteTeams").prop("disabled", true);
-  $("#showOverlay").prop("disabled", false);
-  $("#introRadio").prop("disabled", false);
+  $("#showOverlay, #showTeamIntro").prop("disabled", false);
+  $("#introRadio, #teamIntroRadio").prop("disabled", false);
   $("#muteMatchSounds").prop("checked", false);
 }
 

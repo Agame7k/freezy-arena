@@ -19,7 +19,6 @@ let currentMatch;
 let overlayCenteringHideParams;
 let overlayCenteringShowParams;
 let lowerThirdVisible = false;
-const lastScores = {};
 // Everything the winner reveal needs about the most recently posted result; null until a score has been posted.
 let revealData = null;
 const hubActiveController = DisplayShared.createHubActiveController(function () {
@@ -79,6 +78,18 @@ const slideIn = function (fromX) {
   ];
 };
 
+// Transforms and filters that leave an element looking untouched are stored as "none" once an animation settles, so
+// the element doesn't stay promoted to its own compositing layer (which can leave text rendering slightly soft).
+const restingValue = function (property, value) {
+  if (property === "filter" && /^blur\(0(px)?\)$/.test(value)) {
+    return "none";
+  }
+  if (property === "transform" && /^((translate[XY]?\(0(px)?\)|scale\(1\))\s*)+$/.test(value)) {
+    return "none";
+  }
+  return value;
+};
+
 const wait = function (ms) {
   return new Promise(function (resolve) {
     setTimeout(resolve, ms);
@@ -92,6 +103,9 @@ const animate = function (target, keyframes, duration, easing, delay = 0, stagge
   const finalFrame = {...keyframes[keyframes.length - 1]};
   delete finalFrame.offset;
   delete finalFrame.easing;
+  Object.keys(finalFrame).forEach(function (property) {
+    finalFrame[property] = restingValue(property, finalFrame[property]);
+  });
   return Promise.all($(target).toArray().map(function (element, i) {
     const totalDelay = delay + i * stagger;
     const animation = element.animate(keyframes, {duration, easing, delay: totalDelay, fill: "both"});
@@ -197,22 +211,6 @@ const updateMiniMomentum = function (redScore, blueScore) {
   }
 };
 
-// Gives a live score a quick punch whenever it goes up, so points landing read as events rather than silent edits.
-const pulseScoreChange = function (side, score) {
-  const previousScore = lastScores[side];
-  lastScores[side] = score;
-  if (currentScreen !== "match" || previousScore === undefined || score <= previousScore) {
-    return;
-  }
-  const element = document.getElementById(`${side}ScoreNumber`);
-  if (element) {
-    element.animate(
-      [{transform: "scale(1.22)", filter: "brightness(1.9)"}, {transform: "scale(1)", filter: "brightness(1)"}],
-      {duration: 650, easing: ease.in}
-    );
-  }
-};
-
 // Handles a websocket message to change which screen is displayed.
 const handleAudienceDisplayMode = function (targetScreen) {
   transitionQueue.push(targetScreen);
@@ -260,9 +258,8 @@ const executeTransitionQueue = async function () {
 // Handles a websocket message to update the teams for the current match.
 const handleMatchLoad = function (data) {
   currentMatch = DisplayShared.handleMatchLoad(data, redSide, blueSide);
-  delete lastScores[redSide];
-  delete lastScores[blueSide];
   updateMiniMomentum(0, 0);
+  MatchIntro.build(data, redSide, blueSide, getAvatarUrl);
 };
 
 // Handles a websocket message to update the match time countdown.
@@ -282,8 +279,6 @@ const handleRealtimeScore = function (data) {
   const redScore = data.Red.ScoreSummary.Score - data.Red.ScoreSummary.PostMatchPoints;
   const blueScore = data.Blue.ScoreSummary.Score - data.Blue.ScoreSummary.PostMatchPoints;
   updateMiniMomentum(redScore, blueScore);
-  pulseScoreChange(redSide, redScore);
-  pulseScoreChange(blueSide, blueScore);
 };
 
 const setFinalResultIndicator = function (side, label, result) {
@@ -591,7 +586,7 @@ const revealMatchReadouts = function (delay) {
   return Promise.all([
     animate(".score-number", blurIn, 650, ease.in, delay, 90),
     animate("#matchTime", blurIn, 650, ease.in, delay + 140),
-    animate(".score-fields", [{opacity: 0}, {opacity: 1}], 650, ease.in, delay + 200),
+    animate(".score-fields", blurIn, 650, ease.in, delay + 200),
     wait(delay).then(hubActiveController.restartPendingHubActiveIndicators),
   ]);
 };
@@ -696,8 +691,42 @@ const transitionMatchToBlank = async function () {
   await sinkOverlay();
 };
 
+// Sound cues for the full-screen intro, reusing the winner reveal's synthesizer.
+const matchIntroSound = {
+  whoosh: function () {
+    revealSound.start().then(function () {
+      revealSound.whoosh(0.8, 0, 0.28);
+    });
+  },
+  slam: function () {
+    revealSound.slam();
+  },
+};
+
 const transitionBlankToIntro = function () {
   return Promise.all([riseOverlay(0), expandIntro(200)]);
+};
+
+// The full-screen team intro holds until the operator moves on; it then splits apart with "VS" diving towards the
+// bug, which rises and opens up underneath it.
+const leaveTeamIntro = function () {
+  return MatchIntro.leave(overlayCenteringShowParams === overlayCenteringTopShowParams, matchIntroSound);
+};
+
+const transitionBlankToTeamIntro = function () {
+  return MatchIntro.play(matchIntroSound);
+};
+
+const transitionTeamIntroToBlank = function () {
+  return leaveTeamIntro();
+};
+
+const transitionTeamIntroToIntro = function () {
+  return Promise.all([leaveTeamIntro(), riseOverlay(300), expandIntro(500)]);
+};
+
+const transitionTeamIntroToMatch = function () {
+  return Promise.all([leaveTeamIntro(), riseOverlay(300), cascadeTeams(550), expandMatch(500), openInfoBar(1000)]);
 };
 
 const transitionIntroToBlank = async function () {
@@ -1899,6 +1928,7 @@ $(function () {
       match: transitionBlankToMatch,
       score: transitionBlankToScore,
       sponsor: transitionBlankToSponsor,
+      teamIntro: transitionBlankToTeamIntro,
       timeout: transitionBlankToTimeout,
     },
     bracket: {
@@ -1942,6 +1972,11 @@ $(function () {
       bracket: transitionSponsorToBracket,
       logo: transitionSponsorToLogo,
       score: transitionSponsorToScore,
+    },
+    teamIntro: {
+      blank: transitionTeamIntroToBlank,
+      intro: transitionTeamIntroToIntro,
+      match: transitionTeamIntroToMatch,
     },
     timeout: {
       blank: transitionTimeoutToBlank,

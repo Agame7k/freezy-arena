@@ -19,6 +19,9 @@ import (
 	"strconv"
 )
 
+// Served for a team that doesn't have an avatar of its own.
+const defaultTeamAvatarPath = "static/img/default-avatar.svg"
+
 type MatchResultWithSummary struct {
 	model.MatchResult
 	RedSummary  *game.ScoreSummary
@@ -227,9 +230,17 @@ func (web *Web) teamAvatarsApiHandler(w http.ResponseWriter, r *http.Request) {
 
 	avatarPath := fmt.Sprintf("%s/%d.png", partner.AvatarsDir, teamId)
 	if _, err := os.Stat(avatarPath); os.IsNotExist(err) {
-		avatarPath = fmt.Sprintf("%s/0.png", partner.AvatarsDir)
+		if teamId > 0 {
+			// A real team that just doesn't have an avatar gets a generic robot icon.
+			avatarPath = defaultTeamAvatarPath
+		} else {
+			avatarPath = fmt.Sprintf("%s/0.png", partner.AvatarsDir)
+		}
 	}
 
+	// Make browsers revalidate every time; otherwise a display that fetched the placeholder before a team's avatar was
+	// downloaded keeps showing it indefinitely. Unchanged files still come back as a cheap 304.
+	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, r, avatarPath)
 }
 
