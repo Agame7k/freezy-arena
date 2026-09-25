@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/Team254/cheesy-arena/field"
@@ -41,8 +42,76 @@ func (web *Web) refereePanelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Messages that may only be sent from the head referee panel.
+var headRefereeOnlyMessages = map[string]bool{
+	"card":             true,
+	"toggleBypass":     true,
+	"signalVolunteers": true,
+	"signalReset":      true,
+	"toggleFtaReady":   true,
+	"commitAndPost":    true,
+}
+
+// A foul along with the metadata needed to render it in the combined foul list.
+type refereePanelFoul struct {
+	Alliance string
+	Number   int // One-based position of the foul within its alliance's list.
+	Foul     game.Foul
+	TeamIds  [3]int
+}
+
+// A foul that was deleted from a referee panel and can still be restored.
+type deletedFoul struct {
+	alliance string
+	match    *model.Match
+	foul     game.Foul
+}
+
+// Returns whether the request is from the head referee panel rather than a regular referee panel.
+func isHeadRefereeRequest(r *http.Request) bool {
+	return r.URL.Query().Get("hr") != "false"
+}
+
+// Returns a pointer to the given alliance's foul list.
+func (web *Web) allianceFouls(alliance string) *[]game.Foul {
+	if alliance == "red" {
+		return &web.arena.RedRealtimeScore.CurrentScore.Fouls
+	}
+	return &web.arena.BlueRealtimeScore.CurrentScore.Fouls
+}
+
+// Returns the index of the foul with the given ID within the list, or -1 if it is not present.
+func findFoulIndex(fouls []game.Foul, foulId int) int {
+	for i, foul := range fouls {
+		if foul.FoulId == foulId {
+			return i
+		}
+	}
+	return -1
+}
+
+// Returns the fouls for both alliances as a single list, ordered from newest to oldest.
+func (web *Web) combinedFoulList() []refereePanelFoul {
+	match := web.arena.CurrentMatch
+	var fouls []refereePanelFoul
+	for i, foul := range web.arena.RedRealtimeScore.CurrentScore.Fouls {
+		fouls = append(fouls, refereePanelFoul{"red", i + 1, foul, [3]int{match.Red1, match.Red2, match.Red3}})
+	}
+	for i, foul := range web.arena.BlueRealtimeScore.CurrentScore.Fouls {
+		fouls = append(fouls, refereePanelFoul{"blue", i + 1, foul, [3]int{match.Blue1, match.Blue2, match.Blue3}})
+	}
+	sort.SliceStable(fouls, func(i, j int) bool {
+		return fouls[i].Foul.FoulId > fouls[j].Foul.FoulId
+	})
+	return fouls
+}
+
 // Renders a partial template for when the foul list is updated.
 func (web *Web) refereePanelFoulListHandler(w http.ResponseWriter, r *http.Request) {
+	if !web.userIsAdmin(w, r) {
+		return
+	}
+
 	template, err := web.parseFiles("templates/referee_panel_foul_list.html")
 	if err != nil {
 		handleWebErr(w, err)
@@ -50,14 +119,10 @@ func (web *Web) refereePanelFoulListHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	data := struct {
-		Match     *model.Match
-		RedFouls  []game.Foul
-		BlueFouls []game.Foul
-		Rules     map[int]*game.Rule
+		Fouls []refereePanelFoul
+		Rules map[int]*game.Rule
 	}{
-		web.arena.CurrentMatch,
-		web.arena.RedRealtimeScore.CurrentScore.Fouls,
-		web.arena.BlueRealtimeScore.CurrentScore.Fouls,
+		web.combinedFoulList(),
 		game.GetAllRules(),
 	}
 	err = template.ExecuteTemplate(w, "referee_panel_foul_list", data)
@@ -73,22 +138,37 @@ func (web *Web) refereePanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	isHeadReferee := isHeadRefereeRequest(r)
+	source := "Ref"
+	if isHeadReferee {
+		source = "Head Ref"
+	}
+
 	ws, err := websocket.NewWebsocket(w, r)
 	if err != nil {
 		handleWebErr(w, err)
 		return
 	}
 	defer closeWebsocket(ws)
+	web.arena.RefereePanels.RegisterPanel(isHeadReferee)
+	web.arena.ScoringStatusNotifier.Notify()
+	defer web.arena.ScoringStatusNotifier.Notify()
+	defer web.arena.RefereePanels.UnregisterPanel(isHeadReferee)
 
 	// Subscribe the websocket to the notifiers whose messages will be passed on to the client, in a separate goroutine.
 	go ws.HandleNotifiers(
+		web.arena.MatchTimingNotifier,
 		web.arena.MatchLoadNotifier,
 		web.arena.MatchTimeNotifier,
 		web.arena.RealtimeScoreNotifier,
 		web.arena.ScoringStatusNotifier,
 		web.arena.ReloadDisplaysNotifier,
 		web.arena.ArenaStatusNotifier,
+		web.arena.AllianceStationDisplayModeNotifier,
 	)
+
+	// Fouls deleted from this panel, keyed by foul ID, so that they can be restored.
+	deletedFouls := make(map[int]deletedFoul)
 
 	// Loop, waiting for commands and responding to them, until the client closes the connection.
 	for {
@@ -100,6 +180,11 @@ func (web *Web) refereePanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 			}
 			log.Println(err)
 			return
+		}
+
+		if headRefereeOnlyMessages[messageType] && !isHeadReferee {
+			writeWebsocketError(ws, fmt.Sprintf("Only the head referee can send '%s'.", messageType))
+			continue
 		}
 
 		switch messageType {
@@ -115,20 +200,15 @@ func (web *Web) refereePanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 			}
 
 			// Add the foul to the correct alliance's list.
-			foul := game.Foul{FoulId: web.arena.NextFoulId, IsMajor: args.IsMajor}
+			foul := game.Foul{FoulId: web.arena.NextFoulId, IsMajor: args.IsMajor, Source: source}
 			web.arena.NextFoulId++
-			if args.Alliance == "red" {
-				web.arena.RedRealtimeScore.CurrentScore.Fouls =
-					append(web.arena.RedRealtimeScore.CurrentScore.Fouls, foul)
-			} else {
-				web.arena.BlueRealtimeScore.CurrentScore.Fouls =
-					append(web.arena.BlueRealtimeScore.CurrentScore.Fouls, foul)
-			}
+			fouls := web.allianceFouls(args.Alliance)
+			*fouls = append(*fouls, foul)
 			web.arena.RealtimeScoreNotifier.Notify()
 		case "toggleFoulType", "updateFoulTeam", "updateFoulRule", "deleteFoul":
 			args := struct {
 				Alliance string
-				Index    int
+				FoulId   int
 				TeamId   int
 				RuleId   int
 			}{}
@@ -138,31 +218,58 @@ func (web *Web) refereePanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 				continue
 			}
 
-			// Find the foul in the correct alliance's list.
-			var fouls *[]game.Foul
-			if args.Alliance == "red" {
-				fouls = &web.arena.RedRealtimeScore.CurrentScore.Fouls
-			} else {
-				fouls = &web.arena.BlueRealtimeScore.CurrentScore.Fouls
+			// Find the foul by its ID so that concurrent edits from other panels can't cause the wrong one to change.
+			fouls := web.allianceFouls(args.Alliance)
+			index := findFoulIndex(*fouls, args.FoulId)
+			if index < 0 {
+				continue
 			}
-			if args.Index >= 0 && args.Index < len(*fouls) {
-				switch messageType {
-				case "toggleFoulType":
-					(*fouls)[args.Index].IsMajor = !(*fouls)[args.Index].IsMajor
-					(*fouls)[args.Index].RuleId = 0
-				case "deleteFoul":
-					*fouls = append((*fouls)[:args.Index], (*fouls)[args.Index+1:]...)
-				case "updateFoulTeam":
-					if (*fouls)[args.Index].TeamId == args.TeamId {
-						(*fouls)[args.Index].TeamId = 0
-					} else {
-						(*fouls)[args.Index].TeamId = args.TeamId
-					}
-				case "updateFoulRule":
-					(*fouls)[args.Index].RuleId = args.RuleId
+			switch messageType {
+			case "toggleFoulType":
+				(*fouls)[index].IsMajor = !(*fouls)[index].IsMajor
+				(*fouls)[index].RuleId = 0
+			case "deleteFoul":
+				deletedFouls[args.FoulId] = deletedFoul{args.Alliance, web.arena.CurrentMatch, (*fouls)[index]}
+				*fouls = append((*fouls)[:index], (*fouls)[index+1:]...)
+			case "updateFoulTeam":
+				if (*fouls)[index].TeamId == args.TeamId {
+					(*fouls)[index].TeamId = 0
+				} else {
+					(*fouls)[index].TeamId = args.TeamId
 				}
-				web.arena.RealtimeScoreNotifier.Notify()
+			case "updateFoulRule":
+				(*fouls)[index].RuleId = args.RuleId
 			}
+			web.arena.RealtimeScoreNotifier.Notify()
+		case "restoreFoul":
+			args := struct {
+				FoulId int
+			}{}
+			err = mapstructure.Decode(data, &args)
+			if err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+
+			deleted, ok := deletedFouls[args.FoulId]
+			delete(deletedFouls, args.FoulId)
+			if !ok || deleted.match != web.arena.CurrentMatch {
+				// Don't restore fouls into a different match than the one they were deleted from.
+				continue
+			}
+			fouls := web.allianceFouls(deleted.alliance)
+			if findFoulIndex(*fouls, deleted.foul.FoulId) >= 0 {
+				continue
+			}
+
+			// Re-insert the foul in its original chronological position.
+			index := sort.Search(len(*fouls), func(i int) bool {
+				return (*fouls)[i].FoulId > deleted.foul.FoulId
+			})
+			*fouls = append(*fouls, game.Foul{})
+			copy((*fouls)[index+1:], (*fouls)[index:])
+			(*fouls)[index] = deleted.foul
+			web.arena.RealtimeScoreNotifier.Notify()
 		case "card":
 			args := struct {
 				Alliance string

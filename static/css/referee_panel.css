@@ -6,6 +6,7 @@ html {
   -webkit-user-select: none;
   -moz-user-select: none;
   overscroll-behavior: none;
+  touch-action: manipulation;
 }
 body {
   background-color: #222;
@@ -25,8 +26,66 @@ h3 {
   align-items: center;
   color: #fff;
 }
+#connectionBanner {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2000;
+  padding: 0.5vw;
+  background-color: #dc3545;
+  color: #fff;
+  font-size: 1.8vw;
+  font-weight: bold;
+  text-align: center;
+}
+body[data-connected="false"] #connectionBanner {
+  display: block;
+}
+body[data-connected="false"] #refereePanel,
+body[data-connected="false"] #controlButtons {
+  opacity: 0.4;
+  pointer-events: none;
+}
+#header {
+  width: 98%;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+#headerLeft,
+#headerRight {
+  width: 25%;
+}
+#headerRight {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 1vw;
+}
 #matchName {
   font-size: 2vw;
+}
+#matchState {
+  font-size: 1.5vw;
+  color: #ccc;
+}
+#matchTimer {
+  font-size: 2.5vw;
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+}
+#refCount {
+  font-size: 1vw;
+  color: #aaa;
+}
+#refCount[data-warning="true"] {
+  color: #fc0;
+}
+#refCount[data-hr="false"] {
+  display: none;
 }
 #refereePanel {
   width: 98%;
@@ -77,8 +136,51 @@ h3 {
 .team-card[data-card="red"] {
   background-color: #900;
 }
+.team-card {
+  position: relative;
+}
 .team-card[data-old-yellow-card="true"] {
   border: 0.3vw solid #ff0;
+}
+/* Corner flag for teams already carrying a yellow card, since another yellow becomes a red. */
+.team-card[data-old-yellow-card="true"]::after {
+  content: "Y";
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0 0.3vw;
+  background-color: #ff0;
+  color: #000;
+  font-size: 0.9vw;
+  font-weight: bold;
+  border-bottom-left-radius: 0.3vw;
+}
+#cardsHint {
+  font-size: 1vw;
+  color: #aaa;
+  margin-bottom: 0.5vw;
+}
+#cards[data-mode="bypass"] .team-card {
+  border: 0.2vw dashed #f90;
+}
+#cards[data-mode="disable"] .team-card {
+  border: 0.2vw dashed #f33;
+}
+#cards[data-mode="disable"] #cardsHint {
+  color: #f66;
+  font-weight: bold;
+}
+#ftaReadyButton {
+  margin-top: 1.5vw;
+  padding: 0.3vw 0.8vw;
+  font-size: 1vw;
+  border: 0.15vw solid #933;
+  border-radius: 1vw;
+  color: #f99;
+}
+#ftaReadyButton[data-ready=true] {
+  border-color: #093;
+  color: #6f9;
 }
 #scoringStatuses {
   margin-top: 0.5vw;
@@ -125,8 +227,40 @@ h3 {
 .blue-foul {
   background-color: #26c;
 }
+#foulTotals {
+  display: flex;
+  flex-direction: row;
+  gap: 2vw;
+  margin-bottom: 0.8vw;
+}
+.foul-totals {
+  padding: 0.2vw 1vw;
+  border-radius: 0.5vw;
+  font-size: 1.2vw;
+}
 #foulList {
   margin: 1vw 0;
+}
+.foul-number {
+  min-width: 5vw;
+  text-align: center;
+  line-height: 1.1;
+}
+.foul-source {
+  font-size: 0.8vw;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+.foul.new-foul {
+  animation: new-foul-flash 2s ease-out;
+}
+@keyframes new-foul-flash {
+  0% {
+    box-shadow: 0 0 0 0.4vw #fff;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 .foul {
   margin-top: 1vw;
@@ -212,12 +346,6 @@ h3 {
 #volunteerButton {
   background-color: #90c;
 }
-#ftaReadyButton {
-  background-color: #933;
-}
-#ftaReadyButton[data-ready=true] {
-  background-color: #093;
-}
 #resetButton {
   background-color: #093;
 }
@@ -226,6 +354,70 @@ h3 {
 }
 #commitButton.disabled {
   background-color: #666;
+}
+#postMatchChecklist {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 1.5vw;
+  font-size: 1.3vw;
+}
+#postMatchChecklist[data-hr="false"],
+#postMatchChecklist[data-visible="false"] {
+  display: none;
+}
+.checklist-item {
+  padding: 0.3vw 0.8vw;
+  border-radius: 0.5vw;
+  background-color: #444;
+  color: #ccc;
+}
+.checklist-item[data-done="true"] {
+  background-color: #1a4d2e;
+  color: #fff;
+}
+.checklist-mark::before {
+  content: "\25CB\00A0";
+}
+.checklist-item[data-done="true"] .checklist-mark::before {
+  content: "\2713\00A0";
+}
+.checklist-optional {
+  font-size: 0.9vw;
+  color: #999;
+}
+#checklistCards[data-has-cards="true"] {
+  background-color: #7a5c00;
+  color: #fff;
+}
+#undoToast {
+  position: fixed;
+  bottom: 2vw;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1500;
+  display: none;
+  align-items: center;
+  gap: 1.5vw;
+  padding: 0.8vw 1.5vw;
+  border-radius: 0.8vw;
+  background-color: #333;
+  border: 1px solid #666;
+  color: #fff;
+  font-size: 1.6vw;
+  box-shadow: 0 0.3vw 1vw rgba(0, 0, 0, 0.5);
+}
+#undoToast[data-visible="true"] {
+  display: flex;
+}
+#undoButton {
+  padding: 0.4vw 1.5vw;
+  border: 0;
+  border-radius: 0.4vw;
+  background-color: #fc0;
+  color: #000;
+  font-size: 1.6vw;
+  font-weight: bold;
 }
 
 #scoreSummary {
@@ -236,10 +428,6 @@ h3 {
   justify-content: center;
   text-align: center;
 }
-#scoreSummary[data-hr="false"] {
-  display: none;
-}
-
 #scoreSummary > div {
   display: grid;
   grid-template-columns: 7.5vw repeat(3, 5.2vw);
@@ -284,4 +472,23 @@ h3 {
 
 #scoreSummary .tower-status[data-status="3"] {
   background-color: #2a8c55;
+}
+
+/* Playoffs: cards apply to the whole alliance. */
+.alliance-label {
+  display: none;
+  font-size: 1.1vw;
+  font-weight: bold;
+  color: #ddd;
+}
+#cards[data-playoff="true"] .alliance-label {
+  display: block;
+}
+#cards[data-playoff="true"][data-mode="card"] .alliance-cards {
+  border: 0.15vw solid #aaa;
+}
+#checklistCards[data-has-dq="true"] {
+  background-color: #900;
+  color: #fff;
+  font-weight: bold;
 }

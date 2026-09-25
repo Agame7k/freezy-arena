@@ -53,9 +53,15 @@ var CheesyWebsocket = function (path, events) {
     this.websocket = $.websocket(url, {
       open: function () {
         console.log("Websocket connected to the server at " + url + ".")
+        if (that.onConnectionChange) {
+          that.onConnectionChange(true);
+        }
       },
       close: function () {
         console.log("Websocket lost connection to the server. Reconnecting in 3 seconds...");
+        if (that.onConnectionChange) {
+          that.onConnectionChange(false);
+        }
         setTimeout(that.connect, 3000);
       },
       events: events

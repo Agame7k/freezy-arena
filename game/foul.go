@@ -10,6 +10,7 @@ type Foul struct {
 	IsMajor bool
 	TeamId  int
 	RuleId  int
+	Source  string // Which panel the foul was entered from (e.g. "Head Ref").
 }
 
 // Returns the rule for which the foul was assigned.

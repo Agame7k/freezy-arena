@@ -173,7 +173,9 @@ func (web *Web) scoringPanelWebsocketHandler(w http.ResponseWriter, r *http.Requ
 			}
 
 			// Add the foul to the correct alliance's list.
-			foul := game.Foul{FoulId: web.arena.NextFoulId, IsMajor: args.IsMajor}
+			foul := game.Foul{
+				FoulId: web.arena.NextFoulId, IsMajor: args.IsMajor, Source: parameters.Title + " Scorer",
+			}
 			web.arena.NextFoulId++
 			if args.Alliance == "red" {
 				web.arena.RedRealtimeScore.CurrentScore.Fouls =

@@ -6,16 +6,29 @@ UI for entering and tracking fouls and red/yellow cards.
 */}}
 {{define "title"}}Referee Panel{{end}}
 {{define "body"}}
-<div id="matchName"></div>
+<div id="connectionBanner">Disconnected from the server &ndash; reconnecting&hellip;</div>
+<div id="header">
+  <div id="headerLeft">
+    <div id="refCount" class="headRef-dependent"></div>
+  </div>
+  <div id="matchName"></div>
+  <div id="headerRight">
+    <div id="matchState"></div>
+    <div id="matchTimer"></div>
+  </div>
+</div>
 <div id="refereePanel">
-  <div id="cards" class="headRef-dependent">
+  <div id="cards" class="headRef-dependent" data-mode="bypass" data-playoff="false">
     <h3 id="teamTitle">Red/Yellow Cards</h3>
+    <div id="cardsHint"></div>
     <div class="alliance-cards" id="redCards">
+      <div class="alliance-label" id="redAllianceLabel"></div>
       {{range $i := seq 3}}
       {{template "teamCard" dict "alliance" "red" "position" $i}}
       {{end}}
     </div>
     <div class="alliance-cards" id="blueCards">
+      <div class="alliance-label" id="blueAllianceLabel"></div>
       {{range $i := seq 3}}
       {{template "teamCard" dict "alliance" "blue" "position" $i}}
       {{end}}
@@ -24,13 +37,19 @@ UI for entering and tracking fouls and red/yellow cards.
       <div class="scoring-status" id="redScoreStatus"></div>
       <div class="scoring-status" id="blueScoreStatus"></div>
     </div>
+    {{/* Freezy Arena */}}
+    <div id="ftaReadyButton" data-ready="false" onclick="toggleFtaReady();">FTA Not Ready</div>
   </div>
   <div id="fouls">
-    <div id="scoreSummary" class="headRef-dependent">
+    <div id="scoreSummary">
       {{template "scoreSummary" dict "id" "blueScoreSummary"}}
       {{template "scoreSummary" dict "id" "redScoreSummary"}}
     </div>
     <h3>Fouls</h3>
+    <div id="foulTotals">
+      <div class="foul-totals blue-foul" id="blueFoulTotals"></div>
+      <div class="foul-totals red-foul" id="redFoulTotals"></div>
+    </div>
     <div id="foulButtons">
       <div class="foul-button blue-foul" onclick="addFoul('blue', false);">Blue</div>
       <div class="foul-button blue-foul" onclick="addFoul('blue', true);">Blue Major</div>
@@ -41,22 +60,38 @@ UI for entering and tracking fouls and red/yellow cards.
   </div>
 </div>
 <p>Note: Team and rule assignment are optional.</p>
+<div id="postMatchChecklist" class="headRef-dependent" data-visible="false">
+  <div class="checklist-item" id="checklistCount" data-done="false">
+    <span class="checklist-mark"></span>Count <span class="checklist-optional">(optional)</span>
+  </div>
+  <div class="checklist-item" id="checklistTablets" data-done="false">
+    <span class="checklist-mark"></span><span class="checklist-text">Scoring tablets</span>
+  </div>
+  <div class="checklist-item" id="checklistCards" data-done="true">
+    <span class="checklist-mark"></span><span class="checklist-text">No cards</span>
+  </div>
+  <div class="checklist-item" id="checklistReset" data-done="false">
+    <span class="checklist-mark"></span>Field reset
+  </div>
+</div>
 <div id="controlButtons" class="headRef-dependent">
-  {{/* Freezy Arena */}}
-  <div class="control-button" id="ftaReadyButton" data-enabled="true" data-ready="false" onclick="toggleFtaReady();">FTA Not Ready</div>
   <div class="control-button" id="volunteerButton" onclick="signalVolunteers();">Signal Count</div>
   <div class="control-button" id="resetButton" onclick="signalReset();">Signal Reset</div>
   <div class="control-button" id="commitButton" onclick="confirmCommit();">Commit & Post</div>
+</div>
+<div id="undoToast">
+  <span id="undoToastText">Foul deleted</span>
+  <button type="button" id="undoButton" onclick="undoDelete();">Undo</button>
 </div>
 <div id="confirmCommit" class="modal">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h4 class="modal-title">Scores not committed</h4>
+        <h4 class="modal-title">Commit & Post?</h4>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        Are you sure you want to commit and post without all scoring tablets having committed?
+        <ul id="confirmCommitItems"></ul>
       </div>
       <div class="modal-footer">
         <form class="form-horizontal">

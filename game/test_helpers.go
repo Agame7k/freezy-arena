@@ -7,13 +7,13 @@ package game
 
 func TestScore1() *Score {
 	fouls := []Foul{
-		{1, true, 25, 16},
-		{2, false, 1868, 13},
-		{3, false, 1868, 13},
-		{4, true, 25, 15},
-		{5, true, 25, 15},
-		{6, true, 25, 15},
-		{7, true, 25, 15},
+		{1, true, 25, 16, ""},
+		{2, false, 1868, 13, ""},
+		{3, false, 1868, 13, ""},
+		{4, true, 25, 15, ""},
+		{5, true, 25, 15, ""},
+		{6, true, 25, 15, ""},
+		{7, true, 25, 15, ""},
 	}
 	return &Score{
 		AutoTowerStatuses: [3]TowerStatus{TowerNone, TowerLevel2, TowerNone},

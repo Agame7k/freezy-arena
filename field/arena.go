@@ -71,6 +71,7 @@ type Arena struct {
 	TeamSigns        *TeamSigns
 	Leds             *led.Controller
 	ScoringPanelRegistry
+	RefereePanels RefereePanelRegistry
 	ArenaNotifiers
 	MatchState
 	lastMatchState                    MatchState
