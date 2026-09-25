@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cheesy-arena",
+      "runtimeExecutable": "./cheesy-arena.exe",
+      "runtimeArgs": ["-simulate"],
+      "port": 8080
+    }
+  ]
+}
