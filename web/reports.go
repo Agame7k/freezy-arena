@@ -953,9 +953,9 @@ func (web *Web) cyclePdfReportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Generates a CSV-formatted report of the FTA notes.
+// Generates a CSV-formatted report of the FTA notes and each team's connection history.
 func (web *Web) ftaCsvReportHandler(w http.ResponseWriter, r *http.Request) {
-	teams, err := web.arena.Database.GetAllTeams()
+	rows, err := web.getFtaReportRows()
 	if err != nil {
 		handleWebErr(w, err)
 		return
@@ -969,7 +969,7 @@ func (web *Web) ftaCsvReportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var buf bytes.Buffer
-	err = template.ExecuteTemplate(&buf, "fta.csv", teams)
+	err = template.ExecuteTemplate(&buf, "fta.csv", rows)
 	if err != nil {
 		handleWebErr(w, err)
 		return

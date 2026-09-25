@@ -21,6 +21,8 @@ type ArenaNotifiers struct {
 	AudienceDisplayModeNotifier        *websocket.Notifier
 	DisplayConfigurationNotifier       *websocket.Notifier
 	EventStatusNotifier                *websocket.Notifier
+	FtaEventNotifier                   *websocket.Notifier
+	FtaNoteNotifier                    *websocket.Notifier
 	LowerThirdNotifier                 *websocket.Notifier
 	MatchLoadNotifier                  *websocket.Notifier
 	MatchTimeNotifier                  *websocket.Notifier
@@ -61,6 +63,8 @@ func (arena *Arena) configureNotifiers() {
 		"displayConfiguration", arena.generateDisplayConfigurationMessage,
 	)
 	arena.EventStatusNotifier = websocket.NewNotifier("eventStatus", arena.generateEventStatusMessage)
+	arena.FtaEventNotifier = websocket.NewNotifier("ftaEvent", nil)
+	arena.FtaNoteNotifier = websocket.NewNotifier("ftaNote", nil)
 	arena.LowerThirdNotifier = websocket.NewNotifier("lowerThird", arena.generateLowerThirdMessage)
 	arena.MatchLoadNotifier = websocket.NewNotifier("matchLoad", arena.GenerateMatchLoadMessage)
 	arena.MatchTimeNotifier = websocket.NewNotifier("matchTime", arena.generateMatchTimeMessage)
@@ -95,13 +99,16 @@ func (arena *Arena) generateAllianceStationDisplayModeMessage() any {
 }
 
 func (arena *Arena) generateArenaStatusMessage() any {
-	startMatchConditions := arena.getStartMatchConditions()
+	startMatchBlockers := arena.getStartMatchBlockers()
 	return &struct {
 		MatchId          int
 		AllianceStations map[string]*AllianceStation
 		MatchState
 		CanStartMatch         bool
 		StartMatchConditions  []string
+		StartMatchBlockers    []StartMatchBlocker
+		FtaStations           map[string]FtaStationStatus
+		PlcIsEnabled          bool
 		AccessPointStatus     string
 		SwitchStatus          string
 		RedSCCStatus          string
@@ -120,8 +127,11 @@ func (arena *Arena) generateArenaStatusMessage() any {
 		arena.CurrentMatch.Id,
 		arena.AllianceStations,
 		arena.MatchState,
-		len(startMatchConditions) == 0,
-		startMatchConditions,
+		len(startMatchBlockers) == 0,
+		blockerMessages(startMatchBlockers),
+		startMatchBlockers,
+		arena.getFtaStationStatuses(),
+		arena.Plc.IsEnabled(),
 		arena.accessPoint.Status,
 		arena.networkSwitch.Status,
 		arena.redSCC.Status,

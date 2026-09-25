@@ -21,21 +21,24 @@ const backupsDir = "db/backups"
 var BaseDir = "." // Mutable for testing
 
 type Database struct {
-	Path                string
-	bolt                *bbolt.DB
-	allianceTable       *table[Alliance]
-	awardTable          *table[Award]
-	eventSettingsTable  *table[EventSettings]
-	judgingSlotTable    *table[JudgingSlot]
-	lowerThirdTable     *table[LowerThird]
-	matchTable          *table[Match]
-	matchResultTable    *table[MatchResult]
-	rankingTable        *table[game.Ranking]
-	scheduleBlockTable  *table[ScheduleBlock]
-	scheduledBreakTable *table[ScheduledBreak]
-	sponsorSlideTable   *table[SponsorSlide]
-	teamTable           *table[Team]
-	userSessionTable    *table[UserSession]
+	Path                   string
+	bolt                   *bbolt.DB
+	allianceTable          *table[Alliance]
+	awardTable             *table[Award]
+	eventSettingsTable     *table[EventSettings]
+	ftaEventTable          *table[FtaEvent]
+	ftaNoteTable           *table[FtaNote]
+	ftaTeamMatchStatsTable *table[FtaTeamMatchStats]
+	judgingSlotTable       *table[JudgingSlot]
+	lowerThirdTable        *table[LowerThird]
+	matchTable             *table[Match]
+	matchResultTable       *table[MatchResult]
+	rankingTable           *table[game.Ranking]
+	scheduleBlockTable     *table[ScheduleBlock]
+	scheduledBreakTable    *table[ScheduledBreak]
+	sponsorSlideTable      *table[SponsorSlide]
+	teamTable              *table[Team]
+	userSessionTable       *table[UserSession]
 }
 
 // Opens the Bolt database at the given path, creating it if it doesn't exist.
@@ -55,6 +58,15 @@ func OpenDatabase(filename string) (*Database, error) {
 		return nil, err
 	}
 	if database.eventSettingsTable, err = newTable[EventSettings](&database); err != nil {
+		return nil, err
+	}
+	if database.ftaEventTable, err = newTable[FtaEvent](&database); err != nil {
+		return nil, err
+	}
+	if database.ftaNoteTable, err = newTable[FtaNote](&database); err != nil {
+		return nil, err
+	}
+	if database.ftaTeamMatchStatsTable, err = newTable[FtaTeamMatchStats](&database); err != nil {
 		return nil, err
 	}
 	if database.judgingSlotTable, err = newTable[JudgingSlot](&database); err != nil {

@@ -178,92 +178,101 @@ func (web *Web) getMatchLogFromRequest(r *http.Request) (*model.Match, *MatchLog
 	if logs.TeamId == 0 {
 		return nil, nil, false, nil
 	}
-	var files []string
-	files, err = filepath.Glob(
-		filepath.Join(".", "static", "logs", "*_*_Match_"+match.ShortName+"_"+strconv.Itoa(logs.TeamId)+".csv"),
-	)
+	logs.Logs, err = loadMatchLogs(match.ShortName, logs.TeamId)
 	if err != nil {
 		return nil, nil, false, err
 	}
-	if len(files) == 0 {
-		return match, &logs, false, nil
-	}
-
-	for _, filename := range files {
-		err := func() (err error) {
-			f, err := os.Open(filename)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if closeErr := f.Close(); err == nil && closeErr != nil {
-					err = closeErr
-				}
-			}()
-
-			// Create a new reader.
-			reader := csv.NewReader(f)
-
-			// Read row
-			header, err := reader.Read()
-			if err != nil {
-				return err
-			}
-
-			// Add mapping: Column/property name --> record index
-			headerMap := make(map[string]int)
-			for i, v := range header {
-				headerMap[v] = i
-			}
-			records, err := reader.ReadAll()
-			if err != nil {
-				return err
-			}
-
-			var curlog = MatchLog{
-				Filename:  filename,
-				StartTime: filename[12:26],
-				Rows:      make([]MatchLogRow, len(records)),
-			}
-			for i, record := range records {
-				var curRow MatchLogRow
-				curRow.MatchTimeSec = parseOptionalFloat(record, headerMap, "matchTimeSec", 0)
-				curRow.PacketType = parseOptionalInt(record, headerMap, "packetType", 0)
-				curRow.TeamId = parseOptionalInt(record, headerMap, "teamId", 0)
-				curRow.AllianceStation = parseOptionalString(record, headerMap, "allianceStation", "")
-				curRow.DsLinked = parseOptionalBool(record, headerMap, "dsLinked", false)
-				curRow.RadioLinked = parseOptionalBool(record, headerMap, "radioLinked", false)
-				curRow.RioLinked = parseOptionalBool(record, headerMap, "rioLinked", false)
-				curRow.RobotLinked = parseOptionalBool(record, headerMap, "robotLinked", false)
-				curRow.Auto = parseOptionalBool(record, headerMap, "auto", false)
-				curRow.Enabled = parseOptionalBool(record, headerMap, "enabled", false)
-				curRow.EmergencyStop = parseOptionalBool(record, headerMap, "emergencyStop", false)
-				curRow.AutonomousStop = parseOptionalBool(record, headerMap, "autonomousStop", false)
-				curRow.BatteryVoltage = parseOptionalFloat(record, headerMap, "batteryVoltage", 0)
-				curRow.MissedPacketCount = parseOptionalInt(record, headerMap, "missedPacketCount", 0)
-				curRow.DsRobotTripTimeMs = parseOptionalInt(record, headerMap, "dsRobotTripTimeMs", 0)
-				curRow.TxRate = parseOptionalFloat(record, headerMap, "txRate", -1)
-				curRow.RxRate = parseOptionalFloat(record, headerMap, "rxRate", -1)
-				curRow.SignalNoiseRatio = parseOptionalInt(record, headerMap, "signalNoiseRatio", -1)
-				curRow.EthernetConnected = parseOptionalBool(record, headerMap, "ethernetConnected", false)
-				curRow.DsReportedStatusValid = parseOptionalBool(record, headerMap, "dsReportedStatusValid", false)
-				curRow.DsReportedAuto = parseOptionalBool(record, headerMap, "dsReportedAuto", false)
-				curRow.DsReportedTeleop = parseOptionalBool(record, headerMap, "dsReportedTeleop", false)
-				curRow.DsReportedDisabled = parseOptionalBool(record, headerMap, "dsReportedDisabled", false)
-				curRow.DsReportedEnabled = parseOptionalBool(record, headerMap, "dsReportedEnabled", false)
-
-				// Store the parsed row in the same position as the CSV record.
-				curlog.Rows[i] = curRow
-			}
-
-			logs.Logs = append(logs.Logs, curlog)
-			return nil
-		}()
-		if err != nil {
-			return nil, nil, false, err
-		}
-	}
 	return match, &logs, false, nil
+}
+
+// Loads every log recorded for the given team in the given match, oldest first.
+func loadMatchLogs(matchShortName string, teamId int) ([]MatchLog, error) {
+	files, err := filepath.Glob(
+		filepath.Join(".", "static", "logs", "*_*_Match_"+matchShortName+"_"+strconv.Itoa(teamId)+".csv"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var matchLogs []MatchLog
+	for _, filename := range files {
+		matchLog, err := readMatchLogFile(filename)
+		if err != nil {
+			return nil, err
+		}
+		matchLogs = append(matchLogs, matchLog)
+	}
+	return matchLogs, nil
+}
+
+// Parses a single team match log CSV file.
+func readMatchLogFile(filename string) (matchLog MatchLog, err error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return MatchLog{}, err
+	}
+	defer func() {
+		if closeErr := f.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+
+	// Create a new reader.
+	reader := csv.NewReader(f)
+
+	// Read row
+	header, err := reader.Read()
+	if err != nil {
+		return MatchLog{}, err
+	}
+
+	// Add mapping: Column/property name --> record index
+	headerMap := make(map[string]int)
+	for i, v := range header {
+		headerMap[v] = i
+	}
+	records, err := reader.ReadAll()
+	if err != nil {
+		return MatchLog{}, err
+	}
+
+	var curlog = MatchLog{
+		Filename:  filename,
+		StartTime: filename[12:26],
+		Rows:      make([]MatchLogRow, len(records)),
+	}
+	for i, record := range records {
+		var curRow MatchLogRow
+		curRow.MatchTimeSec = parseOptionalFloat(record, headerMap, "matchTimeSec", 0)
+		curRow.PacketType = parseOptionalInt(record, headerMap, "packetType", 0)
+		curRow.TeamId = parseOptionalInt(record, headerMap, "teamId", 0)
+		curRow.AllianceStation = parseOptionalString(record, headerMap, "allianceStation", "")
+		curRow.DsLinked = parseOptionalBool(record, headerMap, "dsLinked", false)
+		curRow.RadioLinked = parseOptionalBool(record, headerMap, "radioLinked", false)
+		curRow.RioLinked = parseOptionalBool(record, headerMap, "rioLinked", false)
+		curRow.RobotLinked = parseOptionalBool(record, headerMap, "robotLinked", false)
+		curRow.Auto = parseOptionalBool(record, headerMap, "auto", false)
+		curRow.Enabled = parseOptionalBool(record, headerMap, "enabled", false)
+		curRow.EmergencyStop = parseOptionalBool(record, headerMap, "emergencyStop", false)
+		curRow.AutonomousStop = parseOptionalBool(record, headerMap, "autonomousStop", false)
+		curRow.BatteryVoltage = parseOptionalFloat(record, headerMap, "batteryVoltage", 0)
+		curRow.MissedPacketCount = parseOptionalInt(record, headerMap, "missedPacketCount", 0)
+		curRow.DsRobotTripTimeMs = parseOptionalInt(record, headerMap, "dsRobotTripTimeMs", 0)
+		curRow.TxRate = parseOptionalFloat(record, headerMap, "txRate", -1)
+		curRow.RxRate = parseOptionalFloat(record, headerMap, "rxRate", -1)
+		curRow.SignalNoiseRatio = parseOptionalInt(record, headerMap, "signalNoiseRatio", -1)
+		curRow.EthernetConnected = parseOptionalBool(record, headerMap, "ethernetConnected", false)
+		curRow.DsReportedStatusValid = parseOptionalBool(record, headerMap, "dsReportedStatusValid", false)
+		curRow.DsReportedAuto = parseOptionalBool(record, headerMap, "dsReportedAuto", false)
+		curRow.DsReportedTeleop = parseOptionalBool(record, headerMap, "dsReportedTeleop", false)
+		curRow.DsReportedDisabled = parseOptionalBool(record, headerMap, "dsReportedDisabled", false)
+		curRow.DsReportedEnabled = parseOptionalBool(record, headerMap, "dsReportedEnabled", false)
+
+		// Store the parsed row in the same position as the CSV record.
+		curlog.Rows[i] = curRow
+	}
+
+	return curlog, nil
 }
 
 // parseOptionalString returns a CSV value by column name, or a default for legacy files that lack the column.

@@ -35,6 +35,12 @@ Display showing robot connection status.
     <div id="matchTime" class="text-center" style="width: 10%;"></div>
     <div id="matchState" class="text-end" style="width: 45%; padding-right: 1%;"></div>
   </div>
+  <div id="ftaReadiness" class="fta-only">
+    <div id="ftaReadinessText"></div>
+    <a id="ftaConsoleLink" href="/fta" target="_blank" title="Fault log, team history, and timelines">
+      <i class="bi-box-arrow-up-right"></i> FTA console
+    </a>
+  </div>
   {{template "row" dict "leftPosition" "1" "rightPosition" "3"}}
   {{template "row" dict "leftPosition" "2" "rightPosition" "2"}}
   {{template "row" dict "leftPosition" "3" "rightPosition" "1"}}

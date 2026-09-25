@@ -12,6 +12,42 @@ let matchTimeRemainingSec;
 const lowBatteryThreshold = 8;
 const highBtuThreshold = 7.0;
 
+// FTA mode shows a readiness strip; faults are logged by the server and shown on the FTA console.
+let isFtaMode = false;
+const matchStateStartMatch = 1;
+const matchStatePostMatch = 5;
+
+// Briefly flashes an element to draw the eye to a status that just went bad, so a mid-match disconnect or E-stop
+// is impossible to miss without permanently blinking for as long as it stays bad.
+const flashFault = function (element) {
+  element.removeClass("fault-flash");
+  void element[0].offsetWidth; // Force a reflow so the animation can be retriggered.
+  element.addClass("fault-flash");
+};
+
+// Sets data-status-ok on an element, flashing it if this is a transition from a previously-known-good state into a
+// bad one. Doesn't flash on the very first update (e.g. nothing being connected yet before a match starts), since
+// that's not a fault -- only an actual working connection dropping counts.
+const setStatusOk = function (element, ok) {
+  const isGoodNow = ok === true || ok === "true";
+  const wasGood = element.attr("data-last-ok") === "true";
+  if (wasGood && !isGoodNow) {
+    flashFault(element);
+  }
+  element.attr("data-last-ok", isGoodNow ? "true" : "false");
+  element.attr("data-status-ok", ok);
+};
+
+// Sets data-status on the team ID box, flashing it if the robot just dropped out of a full connection.
+const setTeamStatus = function (element, status) {
+  const isFullyLinkedNow = status === "robot-linked";
+  const wasFullyLinked = element.attr("data-last-status") === "robot-linked";
+  if (wasFullyLinked && !isFullyLinkedNow) {
+    flashFault(element);
+  }
+  element.attr("data-last-status", status);
+  element.attr("data-status", status);
+};
 
 const handleArenaStatus = function (data) {
   // If getting data for the wrong match (e.g. after a server restart), reload the page.
@@ -19,6 +55,10 @@ const handleArenaStatus = function (data) {
     currentMatchId = data.MatchId;
   } else if (currentMatchId !== data.MatchId) {
     location.reload();
+  }
+
+  if (isFtaMode) {
+    updateReadiness(data);
   }
 
   $.each(data.AllianceStations, function (station, stationStatus) {
@@ -65,7 +105,7 @@ const handleArenaStatus = function (data) {
           status = "ds-linked";
         }
       }
-      teamIdElement.attr("data-status", status);
+      setTeamStatus(teamIdElement, status);
       teamNotesTextElement.text(stationStatus.Team.FtaNotes);
       teamNotesElement.attr("data-status", status);
     } else {
@@ -76,7 +116,7 @@ const handleArenaStatus = function (data) {
     }
 
     // Format the Ethernet status box.
-    teamEthernetElement.attr("data-status-ok", stationStatus.Ethernet ? "true" : "");
+    setStatusOk(teamEthernetElement, stationStatus.Ethernet ? "true" : "");
     if (stationStatus.DsConn && stationStatus.DsConn.DsRobotTripTimeMs > 0) {
       teamEthernetElement.text(stationStatus.DsConn.DsRobotTripTimeMs);
     } else {
@@ -92,28 +132,28 @@ const handleArenaStatus = function (data) {
     if (stationStatus.DsConn) {
       // Format the driver station status box.
       const dsConn = stationStatus.DsConn;
-      teamDsElement.attr("data-status-ok", dsConn.DsLinked);
+      setStatusOk(teamDsElement, dsConn.DsLinked);
       teamDsElement.text(dsConn.MissedPacketCount);
 
       // Format the radio status box according to the connection status of the robot radio.
       const radioOkay = stationStatus.Team && stationStatus.Team.Id === wifiStatus.TeamId &&
         (wifiStatus.RadioLinked || dsConn.RobotLinked);
-      teamRadioElement.attr("data-status-ok", radioOkay);
+      setStatusOk(teamRadioElement, radioOkay);
 
       // Format the robot status box.
       const rioOkay = dsConn.RobotLinked;
-      teamRobotElement.attr("data-status-ok", rioOkay);
+      setStatusOk(teamRobotElement, rioOkay);
       if (stationStatus.DsConn.SecondsSinceLastRobotLink > 1 && stationStatus.DsConn.SecondsSinceLastRobotLink < 1000) {
         teamRobotElement.text(stationStatus.DsConn.SecondsSinceLastRobotLink.toFixed());
       } else {
         teamRobotElement.text("RIO");
       }
       const batteryOkay = dsConn.BatteryVoltage > lowBatteryThreshold && dsConn.RobotLinked;
-      teamBatteryElement.attr("data-status-ok", batteryOkay);
+      setStatusOk(teamBatteryElement, batteryOkay);
       teamBatteryElement.text(dsConn.BatteryVoltage.toFixed(1) + "V");
 
       const btuOkay = wifiStatus.MBits < highBtuThreshold && dsConn.RobotLinked;
-      teamStatsElement.attr("data-status-ok", btuOkay);
+      setStatusOk(teamStatsElement, btuOkay);
       if (wifiStatus.MBits >= 0.01) {
         teamBandwidthElement.text(wifiStatus.MBits.toFixed(2));
         teamTripTimeElement.text(dsConn.DsRobotTripTimeMs);
@@ -124,9 +164,9 @@ const handleArenaStatus = function (data) {
         teamMissedPacketsElement.text("-");
       }
     } else {
-      teamDsElement.attr("data-status-ok", "");
+      setStatusOk(teamDsElement, "");
       teamDsElement.text("DS");
-      teamRobotElement.attr("data-status-ok", "");
+      setStatusOk(teamRobotElement, "");
       teamRobotElement.text("RIO");
       teamBatteryElement.text("0.0V");
       teamBandwidthElement.text("-");
@@ -137,26 +177,26 @@ const handleArenaStatus = function (data) {
       const expectedTeamId = stationStatus.Team ? stationStatus.Team.Id : 0;
       if (wifiStatus.TeamId === expectedTeamId) {
         if (wifiStatus.RadioLinked) {
-          teamRadioElement.attr("data-status-ok", true);
+          setStatusOk(teamRadioElement, true);
         } else {
-          teamRadioElement.attr("data-status-ok", "");
+          setStatusOk(teamRadioElement, "");
         }
       } else {
-        teamRadioElement.attr("data-status-ok", false);
+        setStatusOk(teamRadioElement, false);
       }
     }
 
     if (stationStatus.EStop) {
-      teamBypassElement.attr("data-status-ok", false);
+      setStatusOk(teamBypassElement, false);
       teamBypassElement.text("E-STP");
     } else if (stationStatus.AStop) {
-      teamBypassElement.attr("data-status-ok", true);
+      setStatusOk(teamBypassElement, true);
       teamBypassElement.text("A-STP");
     } else if (stationStatus.Bypass) {
-      teamBypassElement.attr("data-status-ok", false);
+      setStatusOk(teamBypassElement, false);
       teamBypassElement.text("BYP");
     } else {
-      teamBypassElement.attr("data-status-ok", true);
+      setStatusOk(teamBypassElement, true);
       teamBypassElement.text("");
     }
   });
@@ -269,19 +309,51 @@ const handleEventStatus = function (data) {
   $("#earlyLateMessage").text(data.EarlyLateMessage);
 };
 
-// Makes the team notes section editable and handles saving edits to the server.
+// Makes the team notes section editable and handles saving edits to the server. Enter saves, Shift+Enter inserts a
+// newline, and Escape discards the edit.
 const editFtaNotes = function (element) {
   const teamNotesTextElement = $(element);
+  const originalText = teamNotesTextElement.text();
   const textArea = $("<textarea />");
-  textArea.val(teamNotesTextElement.text());
+  textArea.val(originalText);
   teamNotesTextElement.replaceWith(textArea);
   textArea.focus();
+  textArea.on("keydown", function (event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      textArea.blur();
+    } else if (event.key === "Escape") {
+      textArea.val(originalText);
+      textArea.blur();
+    }
+  });
   textArea.blur(function () {
     textArea.replaceWith(teamNotesTextElement);
-    if (textArea.val() !== teamNotesTextElement.text()) {
+    if (textArea.val() !== originalText) {
+      teamNotesTextElement.text(textArea.val());
       websocket.send("updateTeamNotes", {station: teamNotesTextElement.attr("data-station"), notes: textArea.val()});
     }
   });
+};
+
+// Shows whether the match can be started and, if not, exactly what is blocking it.
+const updateReadiness = function (data) {
+  const readiness = $("#ftaReadiness");
+  const text = $("#ftaReadinessText");
+  if (data.MatchState >= matchStateStartMatch && data.MatchState < matchStatePostMatch) {
+    readiness.attr("data-state", "running");
+    text.text("Match in progress");
+  } else if (data.MatchState === matchStatePostMatch) {
+    readiness.attr("data-state", "running");
+    text.text("Post-match — see the FTA console for this match's faults");
+  } else if (data.CanStartMatch) {
+    readiness.attr("data-state", "ready");
+    text.text("✔ Ready to start");
+  } else {
+    readiness.attr("data-state", "blocked");
+    text.text("Not ready: " + data.StartMatchConditions.join(" • "));
+  }
+  text.attr("title", data.StartMatchConditions ? data.StartMatchConditions.join("\n") : "");
 };
 
 $(function () {
@@ -304,7 +376,9 @@ $(function () {
   } else {
     $(".fta-dependent").attr("data-fta", urlParams.get("fta"));
     $(".ds-dependent").attr("data-ds", driverStation);
+    isFtaMode = urlParams.get("fta") === "true";
   }
+  $("body").toggleClass("fta-mode", isFtaMode);
 
   $(".reversible-left").attr("data-reversed", reversed);
   $(".reversible-right").attr("data-reversed", reversed);

@@ -233,3 +233,54 @@ textarea {
   color: #2080ff;
 }
 
+
+/* Briefly pulses an element that just transitioned from a working status into a fault, so it's impossible to miss
+   in the moment without blinking continuously for as long as the fault persists. */
+@keyframes fault-flash {
+  0% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.9); filter: brightness(1); }
+  30% { box-shadow: 0 0 0 1.2vw rgba(255, 68, 68, 0); filter: brightness(1.7); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); filter: brightness(1); }
+}
+.fault-flash {
+  animation: fault-flash 700ms ease-out 2;
+}
+
+/* FTA-only additions: a readiness strip showing why a match can't start, with a link to the full FTA console. */
+.fta-only {
+  display: none;
+}
+body.fta-mode .position-row {
+  height: 27%;
+}
+body.fta-mode #ftaReadiness {
+  height: 5%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1vw;
+  padding: 0 1%;
+  background-color: #2a2c38;
+  font-size: 1.1vw;
+}
+#ftaReadiness[data-state="ready"] {
+  background-color: #0a6b2a;
+}
+#ftaReadiness[data-state="blocked"] {
+  background-color: #7a1f2b;
+}
+#ftaReadinessText {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#ftaConsoleLink {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 4px;
+  padding: 0.2vw 0.8vw;
+  background-color: #14151b;
+  color: #fff;
+  font-family: FuturaLTBold;
+  font-size: 1vw;
+  text-decoration: none;
+}

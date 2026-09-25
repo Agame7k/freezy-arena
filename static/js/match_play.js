@@ -6,6 +6,7 @@
 var websocket;
 let scoreIsReady;
 let isReplay;
+let isFtaReady = false;
 const lowBatteryThreshold = 8;
 
 // Sends a websocket message to load the specified match.
@@ -39,6 +40,10 @@ const toggleBypass = function (station) {
 
 // Sends a websocket message to start the match.
 const startMatch = function () {
+  // Without a PLC the FTA ready switch doesn't block the start, so double-check before starting without it.
+  if (!isFtaReady && !confirm("The FTA hasn't marked the field ready. Start the match anyway?")) {
+    return;
+  }
   websocket.send("startMatch",
     {muteMatchSounds: $("#muteMatchSounds").prop("checked")});
 };
@@ -161,6 +166,14 @@ const updateStartMatchTooltip = function (conditions) {
     });
   }
 }
+
+// Turns the start button yellow when everything else is ready but the FTA hasn't marked the field ready yet.
+const updateStartMatchFtaWarning = function (data) {
+  isFtaReady = data.IsFtaReady;
+  const warn = data.CanStartMatch && !data.IsFtaReady;
+  $("#startMatch").toggleClass("btn-success", !warn).toggleClass("btn-warning", warn)
+    .attr("title", warn ? "FTA hasn't marked the field ready" : "");
+};
 
 // Handles a websocket message to update the team connection status.
 const handleArenaStatus = function (data) {
@@ -295,6 +308,7 @@ const handleArenaStatus = function (data) {
       break;
   }
   updateStartMatchTooltip(data.StartMatchConditions);
+  updateStartMatchFtaWarning(data);
 
   $("#accessPointStatus").attr("data-status", data.AccessPointStatus);
   $("#switchStatus").attr("data-status", data.SwitchStatus);

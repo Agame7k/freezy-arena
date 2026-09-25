@@ -17,11 +17,17 @@ const httpPort = 8080
 // Main entry point for the application.
 func main() {
 	flag.BoolVar(&network.DevMode, "dev", false, "Bind driver station listeners to all IP addresses for development")
+	simulate := flag.Bool(
+		"simulate", false, "Simulate robot connections for every team in the match instead of using real driver stations",
+	)
 	flag.Parse()
 
 	arena, err := field.NewArena(eventDbPath)
 	if err != nil {
 		log.Fatalln("Error during startup: ", err)
+	}
+	if *simulate {
+		arena.EnableRobotSimulator()
 	}
 
 	// Start the web server in a separate goroutine.

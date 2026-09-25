@@ -19,7 +19,6 @@ import (
 	"math/rand"
 	"net"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -75,6 +74,7 @@ type Arena struct {
 	MatchState
 	lastMatchState                    MatchState
 	CurrentMatch                      *model.Match
+	CurrentMatchLoadTime              time.Time
 	MatchStartTime                    time.Time
 	LastMatchTimeSec                  float64
 	RedRealtimeScore                  *RealtimeScore
@@ -111,6 +111,9 @@ type Arena struct {
 	lastPlcNotifyTime                 time.Time
 	lastRedLedMode                    led.Mode
 	lastBlueLedMode                   led.Mode
+	ftaMonitor                        *ftaMonitor
+	ftaRecordQueue                    chan ftaRecord
+	robotSimulator                    *robotSimulator
 }
 
 type AllianceStation struct {
@@ -130,6 +133,7 @@ type AllianceStation struct {
 func NewArena(dbPath string) (*Arena, error) {
 	arena := new(Arena)
 	arena.configureNotifiers()
+	arena.ftaMonitor = newFtaMonitor()
 	arena.Plc = new(plc.ModbusPlc)
 	arena.Esp32 = new(plc.Esp32IO)
 	arena.Esp32.SetPlc(arena.Plc)
@@ -343,6 +347,7 @@ func (arena *Arena) LoadMatch(match *model.Match) error {
 	}
 
 	arena.CurrentMatch = match
+	arena.CurrentMatchLoadTime = time.Now()
 
 	loadedByNexus := false
 	if match.ShouldAllowNexusSubstitution() && arena.EventSettings.NexusEnabled {
@@ -822,6 +827,9 @@ func (arena *Arena) Update() {
 	arena.BlueRealtimeScore.ActiveRemainingSec = int(math.Ceil(blueActiveRemaining.Seconds()))
 	arena.BlueRealtimeScore.ActiveDurationSec = int(math.Ceil(blueActiveDuration.Seconds()))
 
+	// Fake robot connections before anything reads them, if simulation is on.
+	arena.updateRobotSimulator()
+
 	// Handle field sensors/lights/actuators.
 	arena.handlePlcInputOutput()
 
@@ -831,6 +839,9 @@ func (arena *Arena) Update() {
 
 	// Log after PLC input so each sample includes the latest physical DS Ethernet state.
 	arena.logTeamSnapshots()
+
+	// Watch for faults after logging so both see the same station state.
+	arena.updateFtaMonitor()
 
 	if !oldRedScore.Equals(&arena.RedRealtimeScore.CurrentScore) ||
 		!oldBlueScore.Equals(&arena.BlueRealtimeScore.CurrentScore) ||
@@ -889,15 +900,20 @@ func (arena *Arena) logTeamSnapshots() {
 
 // Loops indefinitely to track and update the arena components.
 func (arena *Arena) Run() {
-	// Bind the shared driver station UDP socket before any loop sends control packets from it.
-	arena.initializeUdpListener()
+	// Simulated robots don't use the network, so don't listen for real driver stations while simulating.
+	if arena.robotSimulator == nil {
+		// Bind the shared driver station UDP socket before any loop sends control packets from it.
+		arena.initializeUdpListener()
+		go arena.listenForDriverStations()
+		go arena.listenForDsUdpPackets()
+	}
 
 	// Start other loops in goroutines.
-	go arena.listenForDriverStations()
-	go arena.listenForDsUdpPackets()
 	go arena.accessPoint.Run()
 	go arena.Plc.Run()
 	go arena.Esp32.Run()
+	arena.ftaRecordQueue = make(chan ftaRecord, ftaRecordQueueSize)
+	go arena.runFtaRecorder()
 
 	for {
 		loopStartTime := time.Now()
@@ -1130,100 +1146,12 @@ func (arena *Arena) checkCanStartMatch() error {
 	return nil
 }
 
-// Returns descriptions of all conditions preventing the match from being started.
-func (arena *Arena) getStartMatchConditions() []string {
-	var conditions []string
-	if arena.MatchState != PreMatch {
-		conditions = append(
-			conditions,
-			"a match is still in progress or has results pending",
-		)
-	}
-
-	conditions = append(
-		conditions,
-		arena.getAllianceStationStartConditions("R1", "R2", "R3", "B1", "B2", "B3")...,
-	)
-
-	if arena.Plc.IsEnabled() {
-		if !arena.Plc.IsHealthy() {
-			conditions = append(conditions, "PLC is not healthy")
-		}
-		if arena.Plc.GetFieldEStop() {
-			conditions = append(conditions, "field emergency stop is active")
-		}
-		if !arena.Plc.IsFtaReady() {
-			conditions = append(conditions, "FTA ready switch is not active")
-		}
-		var disconnectedArmorBlocks []string
-		for name, status := range arena.Plc.GetArmorBlockStatuses() {
-			if !status {
-				disconnectedArmorBlocks = append(disconnectedArmorBlocks, name)
-			}
-		}
-		sort.Strings(disconnectedArmorBlocks)
-		for _, name := range disconnectedArmorBlocks {
-			conditions = append(
-				conditions,
-				fmt.Sprintf("PLC ArmorBlock %q is not connected", name),
-			)
-		}
-	}
-
-	return conditions
-}
-
 func (arena *Arena) checkAllianceStationsReady(stations ...string) error {
 	conditions := arena.getAllianceStationStartConditions(stations...)
 	if len(conditions) > 0 {
 		return fmt.Errorf("cannot start match: %s", strings.Join(conditions, "; "))
 	}
 	return nil
-}
-
-func (arena *Arena) getAllianceStationStartConditions(stations ...string) []string {
-	var eStoppedStations, aStopNotResetStations, disconnectedStations []string
-	for _, station := range stations {
-		allianceStation := arena.AllianceStations[station]
-		if allianceStation.EStop {
-			eStoppedStations = append(eStoppedStations, station)
-		}
-		if !allianceStation.aStopReset {
-			aStopNotResetStations = append(aStopNotResetStations, station)
-		}
-		if !allianceStation.Bypass {
-			if allianceStation.DsConn == nil || !allianceStation.DsConn.RobotLinked {
-				disconnectedStations = append(disconnectedStations, station)
-			}
-		}
-	}
-
-	var conditions []string
-	if len(eStoppedStations) > 0 {
-		conditions = append(
-			conditions,
-			fmt.Sprintf("an emergency stop is active (%s)", strings.Join(eStoppedStations, ", ")),
-		)
-	}
-	if len(aStopNotResetStations) > 0 {
-		conditions = append(
-			conditions,
-			fmt.Sprintf(
-				"an autonomous stop has not been reset since the previous match (%s)",
-				strings.Join(aStopNotResetStations, ", "),
-			),
-		)
-	}
-	if len(disconnectedStations) > 0 {
-		conditions = append(
-			conditions,
-			fmt.Sprintf(
-				"not all robots are connected or bypassed (%s)",
-				strings.Join(disconnectedStations, ", "),
-			),
-		)
-	}
-	return conditions
 }
 
 func (arena *Arena) sendDsPacket(auto bool, enabled bool) {
