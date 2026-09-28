@@ -4,10 +4,12 @@
 package web
 
 import (
+	"bytes"
 	"github.com/Team254/cheesy-arena/field"
 	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/websocket"
 	"github.com/stretchr/testify/assert"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +46,20 @@ func (web *Web) postHttpResponse(path string, body string) *httptest.ResponseRec
 	recorder := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
+	web.newHandler().ServeHTTP(recorder, req)
+	return recorder
+}
+
+// Posts a form containing a single uploaded file with the given contents.
+func (web *Web) postMultipartFile(path, fieldName, filename, contents string) *httptest.ResponseRecorder {
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile(fieldName, filename)
+	_, _ = part.Write([]byte(contents))
+	_ = writer.Close()
+	recorder := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", path, body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	web.newHandler().ServeHTTP(recorder, req)
 	return recorder
 }

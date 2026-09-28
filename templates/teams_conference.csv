@@ -1,0 +1,3 @@
+Number,Conference,Name,Nickname,SchoolName,City,StateProv,Country,RookieYear,RobotName,HasConnected
+{{range $team := .Teams}}{{$team.Id}},{{conferenceName $.Conferences $team.ConferenceId}},"{{$team.Name}}","{{$team.Nickname}}","{{$team.SchoolName}}","{{$team.City}}","{{$team.StateProv}}","{{$team.Country}}",{{$team.RookieYear}},"{{$team.RobotName}}",{{$team.HasConnected}}
+{{end}}

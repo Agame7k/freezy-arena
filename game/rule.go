@@ -5,6 +5,8 @@
 
 package game
 
+import "sync"
+
 type Rule struct {
 	Id             int
 	RuleNumber     string
@@ -51,6 +53,7 @@ var rules = []*Rule{
 
 // @formatter:on
 var ruleMap map[int]*Rule
+var ruleMapOnce sync.Once
 
 // Returns the rule having the given ID, or nil if no such rule exists.
 func GetRuleById(id int) *Rule {
@@ -59,11 +62,14 @@ func GetRuleById(id int) *Rule {
 
 // Returns a slice of all defined rules that carry point penalties.
 func GetAllRules() map[int]*Rule {
-	if ruleMap == nil {
-		ruleMap = make(map[int]*Rule, len(rules))
-		for _, rule := range rules {
-			ruleMap[rule.Id] = rule
-		}
-	}
+	// Build the map exactly once, since rules are looked up concurrently from many goroutines.
+	ruleMapOnce.Do(
+		func() {
+			ruleMap = make(map[int]*Rule, len(rules))
+			for _, rule := range rules {
+				ruleMap[rule.Id] = rule
+			}
+		},
+	)
 	return ruleMap
 }

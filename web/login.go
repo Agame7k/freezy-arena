@@ -65,6 +65,10 @@ func (web *Web) userIsAdmin(w http.ResponseWriter, r *http.Request) bool {
 		// Disable auth if there is no password configured.
 		return true
 	}
+	if isInternalRequest(r) {
+		// A request made by the server itself on behalf of an admin (see callHandlerInternally).
+		return true
+	}
 	session := web.getUserSessionFromCookie(r)
 	if session != nil && session.Username == adminUser {
 		return true

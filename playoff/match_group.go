@@ -38,12 +38,25 @@ type matchSpec struct {
 	tbaMatchKey         model.TbaMatchKey
 	redAllianceId       int
 	blueAllianceId      int
+	fieldId             int
+	conferenceId        int
+	// Identifies which schedule timeline the match is played on; matches sharing a timeline are played back-to-back.
+	timeline int
+	// Multiplier applied to durationSec when scheduling (e.g. halved when two brackets are interleaved on one field).
+	durationScale float64
 }
 
 // collectMatchGroups returns a map of all match groups including and below the given root match group, keyed by ID.
 func collectMatchGroups(rootMatchGroup MatchGroup) (map[string]MatchGroup, error) {
+	return collectMatchGroupsFromTraversal(rootMatchGroup.traverse)
+}
+
+// collectMatchGroupsFromTraversal returns a map of all match groups visited by the given traversal, keyed by ID.
+func collectMatchGroupsFromTraversal(
+	traverse func(visitFunction func(MatchGroup) error) error,
+) (map[string]MatchGroup, error) {
 	matchGroups := make(map[string]MatchGroup)
-	err := rootMatchGroup.traverse(
+	err := traverse(
 		func(matchGroup MatchGroup) error {
 			if _, ok := matchGroups[matchGroup.Id()]; ok {
 				return fmt.Errorf("match group with ID %q defined more than once", matchGroup.Id())
@@ -57,13 +70,18 @@ func collectMatchGroups(rootMatchGroup MatchGroup) (map[string]MatchGroup, error
 
 // collectMatches returns a slice of all matches including and below the given root match group, in order of play.
 func collectMatchSpecs(rootMatchGroup MatchGroup) ([]*matchSpec, error) {
+	return collectMatchSpecsFromTraversal(rootMatchGroup.traverse)
+}
+
+// collectMatchSpecsFromTraversal returns a slice of all matches visited by the given traversal, in order of play.
+func collectMatchSpecsFromTraversal(traverse func(visitFunction func(MatchGroup) error) error) ([]*matchSpec, error) {
 	uniqueLongNames := make(map[string]struct{})
 	uniqueShortNames := make(map[string]struct{})
 	uniqueOrders := make(map[int]struct{})
 	uniqueTbaKeys := make(map[model.TbaMatchKey]struct{})
 
 	var matches []*matchSpec
-	err := rootMatchGroup.traverse(
+	err := traverse(
 		func(matchGroup MatchGroup) error {
 			for _, match := range matchGroup.MatchSpecs() {
 				if _, ok := uniqueLongNames[match.longName]; ok {

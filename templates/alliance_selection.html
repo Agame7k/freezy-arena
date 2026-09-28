@@ -6,6 +6,7 @@ UI for controlling the alliance selection process.
 */}}
 {{define "title"}}Alliance Selection{{end}}
 {{define "body"}}
+{{template "hub_owned_notice" "/alliance_selection"}}
 <div class="row">
   {{if .ErrorMessage}}
   <div class="alert alert-dismissible alert-danger">
@@ -13,10 +14,30 @@ UI for controlling the alliance selection process.
     {{.ErrorMessage}}
   </div>
   {{end}}
+  {{if .Conferences}}
+  <div class="col-12 mb-3">
+    <ul class="nav nav-pills">
+      {{range $conference := .Conferences}}
+      <li class="nav-item">
+        <a class="nav-link {{if eq $conference.Id $.Conference.Id}}active{{end}}"
+          href="/alliance_selection?conference={{$conference.Id}}"
+          {{if eq $conference.Id $.Conference.Id}}style="background-color: {{$conference.Color}};"{{end}}>
+          {{$conference.Name}} Conference ({{$conference.NumAlliances}} alliances)
+        </a>
+      </li>
+      {{end}}
+    </ul>
+    <small class="text-body-secondary">
+      Only {{.Conference.Name}} teams appear in the draft list, ordered by conference rank.
+      {{if eq .AllianceFinalizeMode 0}}Finalizing saves this conference only; the other conference can keep picking.
+      {{else}}Finalize becomes available once both conferences are complete.{{end}}
+    </small>
+  </div>
+  {{end}}
   {{if len .Alliances | eq 0}}
   <div class="col-lg-3">
     <form action="/alliance_selection/start" method="POST">
-      <legend>Alliance Selection</legend>
+      <legend>Alliance Selection{{if .Conference}} &ndash; {{.Conference.Name}}{{end}}</legend>
       <button type="submit" class="btn btn-primary">Start Alliance Selection</button>
     </form>
   </div>
@@ -58,7 +79,7 @@ UI for controlling the alliance selection process.
         <tbody>
           {{range $i, $alliance := .Alliances}}
           <tr>
-            <td class="col-lg-2">{{add $i 1}}</td>
+            <td class="col-lg-2">{{if $.Conference}}{{$.Conference.ShortName}}{{end}}{{add $i 1}}</td>
             {{range $j, $allianceTeamId := $alliance.TeamIds}}
             {{if eq $allianceTeamId 0}}
             <td class="col-lg-2">

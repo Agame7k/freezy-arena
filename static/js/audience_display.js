@@ -47,8 +47,39 @@ const timeoutDetailsOut = "570px";
 
 let winner = "tie";
 
+// Screens that are shown by embedding another display full-screen over a blank audience display.
+const frameScreens = {
+  dualField: "/displays/dual_field?background=%23000",
+  standings: "/displays/rankings?conference=split&scrollMsPerRow=1000",
+};
+
+// Shows or hides the embedded full-screen display for the given screen.
+const showFrameScreen = function (targetScreen) {
+  let frame = $("#frameScreen");
+  if (!frameScreens[targetScreen]) {
+    frame.fadeOut(300, function () {
+      frame.attr("src", "about:blank");
+    });
+    return;
+  }
+  if (frame.length === 0) {
+    frame = $('<iframe id="frameScreen"></iframe>').css({
+      position: "fixed", top: 0, left: 0, width: "100%", height: "100%", border: 0, zIndex: 900, display: "none",
+    });
+    $("body").append(frame);
+  }
+  const displayId = new URLSearchParams(window.location.search).get("displayId") || "0";
+  frame.attr("src", `${frameScreens[targetScreen]}&displayId=${displayId}-${targetScreen}`);
+  frame.fadeIn(500);
+};
+
 // Handles a websocket message to change which screen is displayed.
 const handleAudienceDisplayMode = function (targetScreen) {
+  showFrameScreen(targetScreen);
+  if (frameScreens[targetScreen]) {
+    // Clear the regular screens underneath the embedded display.
+    targetScreen = "blank";
+  }
   transitionQueue.push(targetScreen);
   executeTransitionQueue();
 };
@@ -120,7 +151,11 @@ const setFinalResultIndicator = function (side, label, result) {
 };
 
 // Handles a websocket message to populate the final score data.
+// Field and conference information for the most recently posted score.
+let scoreEvent = null;
+
 const handleScorePosted = function (data) {
+  scoreEvent = data.Event || null;
   if (data.RedWon) {
     setFinalResultIndicator(redSide, "WINNER", "winner");
     setFinalResultIndicator(blueSide, "", "");
@@ -136,7 +171,10 @@ const handleScorePosted = function (data) {
   $("#finalTiebreakReason").attr("data-visible", tiebreakReason !== "");
 
   $(`#${redSide}FinalScore`).text(data.RedScoreSummary.Score);
-  $(`#${redSide}FinalAlliance`).text("Alliance " + data.Match.PlayoffRedAlliance);
+  $(`#${redSide}FinalAlliance`).text(
+    "Alliance " + ((scoreEvent && scoreEvent.RedAllianceLabel) || data.Match.PlayoffRedAlliance)
+  );
+  setConferenceColor(`#${redSide}FinalAlliance`, data.Match.Red1);
   setTeamInfo(redSide, 1, data.Match.Red1, data.RedCards, data.RedRankings);
   setTeamInfo(redSide, 2, data.Match.Red2, data.RedCards, data.RedRankings);
   setTeamInfo(redSide, 3, data.Match.Red3, data.RedCards, data.RedRankings);
@@ -176,7 +214,10 @@ const handleScorePosted = function (data) {
   redFinalDestination.attr("data-won", data.RedWon);
 
   $(`#${blueSide}FinalScore`).text(data.BlueScoreSummary.Score);
-  $(`#${blueSide}FinalAlliance`).text("Alliance " + data.Match.PlayoffBlueAlliance);
+  $(`#${blueSide}FinalAlliance`).text(
+    "Alliance " + ((scoreEvent && scoreEvent.BlueAllianceLabel) || data.Match.PlayoffBlueAlliance)
+  );
+  setConferenceColor(`#${blueSide}FinalAlliance`, data.Match.Blue1);
   setTeamInfo(blueSide, 1, data.Match.Blue1, data.BlueCards, data.BlueRankings);
   setTeamInfo(blueSide, 2, data.Match.Blue2, data.BlueCards, data.BlueRankings);
   setTeamInfo(blueSide, 3, data.Match.Blue3, data.BlueCards, data.BlueRankings);
@@ -219,10 +260,25 @@ const handleScorePosted = function (data) {
   if (data.Match.NameDetail !== "") {
     matchName += " &ndash; " + data.Match.NameDetail;
   }
+  if (scoreEvent && scoreEvent.FieldName) {
+    matchName = scoreEvent.FieldName + " &middot; " + matchName;
+  }
+  if (data.RankingsPending && data.Match.Type === matchTypeQualification) {
+    matchName += " (rankings pending)";
+  }
   $("#finalMatchName").html(matchName);
 
   // Reload the bracket to reflect any changes.
-  $("#bracketSvg").attr("src", "/api/bracket/svg?activeMatch=saved&v=" + new Date().getTime());
+  const bracketParams = new URLSearchParams(window.location.search);
+  let bracketUrl = "/api/bracket/svg?activeMatch=saved&v=" + new Date().getTime();
+  const bracketConference = bracketParams.get("conference") || (bracketParams.get("bracket") === "all" ? "all" : null);
+  if (bracketConference) {
+    bracketUrl += "&conference=" + encodeURIComponent(bracketConference);
+  }
+  if (bracketParams.get("field")) {
+    bracketUrl += "&field=" + encodeURIComponent(bracketParams.get("field"));
+  }
+  $("#bracketSvg").attr("src", bracketUrl);
 
   if (data.Match.Type === matchTypePlayoff) {
     // Hide bonus ranking points and show playoff-only fields.
@@ -262,7 +318,11 @@ const handleAllianceSelection = function (data) {
     $.each(alliances, function (k, v) {
       v.Index = k + 1;
     });
-    $("#allianceSelection").html(allianceSelectionTemplate({alliances: alliances, numColumns: numColumns}));
+    const conference = data.Conference || null;
+    $("#allianceSelection").html(allianceSelectionTemplate({
+      alliances: alliances, numColumns: numColumns, conference: conference,
+      prefix: conference ? conference.ShortName : "",
+    }));
   }
   if (rankedTeams) {
     let text = "";
@@ -754,6 +814,13 @@ const playVictoryVideo = function (callback) {
   };
 };
 
+// Colors an element with the conference color of the given team, in a multi-conference event.
+const setConferenceColor = function (selector, teamId) {
+  const conference = scoreEvent && scoreEvent.MultiConference &&
+    scoreEvent.Conferences[scoreEvent.TeamConferences[teamId]];
+  $(selector).css("border-bottom", conference ? `0.2em solid ${conference.Color}` : "");
+};
+
 const getAvatarUrl = function (teamId) {
   return DisplayShared.getAvatarUrl(teamId);
 };
@@ -772,14 +839,17 @@ const setTeamInfo = function (side, position, teamId, cards, rankings) {
   const ranking = rankings[teamId];
   let rankIndicator = "";
   let rankNumber = "";
-  if (ranking !== undefined && ranking !== null && ranking.Rank !== 0) {
-    rankNumber = ranking.Rank;
-    if (rankNumber > ranking.PreviousRank && ranking.PreviousRank > 0) {
+  const rank = DisplayShared.formatRank(scoreEvent, teamId, ranking);
+  if (rank.rank !== 0) {
+    // In a multi-conference event this shows the conference rank (e.g. "N4"), with the overall rank as a tooltip.
+    rankNumber = rank.text;
+    if (rank.rank > rank.previousRank && rank.previousRank > 0) {
       rankIndicator = "rank-down";
-    } else if (rankNumber < ranking.PreviousRank) {
+    } else if (rank.rank < rank.previousRank) {
       rankIndicator = "rank-up";
     }
   }
+  $(`#${side}FinalTeam${position}RankNumber`).attr("title", rank.overall);
 
   const rankIndicatorElement = $(`#${side}FinalTeam${position}RankIndicator`);
   rankIndicatorElement.attr("src", rankIndicator === "" ? "" : `/static/img/${rankIndicator}.svg`);

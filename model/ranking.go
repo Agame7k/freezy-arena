@@ -6,6 +6,7 @@
 package model
 
 import (
+	"encoding/json"
 	"github.com/Team254/cheesy-arena/game"
 	"sort"
 )
@@ -44,16 +45,15 @@ func (database *Database) GetAllRankings() (game.Rankings, error) {
 	return rankings, nil
 }
 
-// Deletes the existing rankings and inserts the given ones as a replacement.
+// Deletes the existing rankings and inserts the given ones as a replacement, in a single transaction so that
+// concurrent readers and writers never see a partial set.
 func (database *Database) ReplaceAllRankings(rankings game.Rankings) error {
-	if err := database.rankingTable.truncate(); err != nil {
+	if rankings == nil {
+		rankings = game.Rankings{}
+	}
+	rankingsJson, err := json.Marshal(rankings)
+	if err != nil {
 		return err
 	}
-
-	for _, ranking := range rankings {
-		if err := database.CreateRanking(&ranking); err != nil {
-			return err
-		}
-	}
-	return nil
+	return database.rankingTable.replaceFromJson(rankingsJson)
 }

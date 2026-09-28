@@ -21,7 +21,7 @@ func TestAwardCrud(t *testing.T) {
 	db := setupTestDb(t)
 	defer db.Close()
 
-	award := Award{0, JudgedAward, "Saftey Award", 254, ""}
+	award := Award{0, JudgedAward, "Saftey Award", 254, "", 0}
 	assert.Nil(t, db.CreateAward(&award))
 	award2, err := db.GetAwardById(1)
 	assert.Nil(t, err)
@@ -55,7 +55,7 @@ func TestTruncateAwards(t *testing.T) {
 	db := setupTestDb(t)
 	defer db.Close()
 
-	award := Award{0, JudgedAward, "Saftey Award", 254, ""}
+	award := Award{0, JudgedAward, "Saftey Award", 254, "", 0}
 	db.CreateAward(&award)
 	db.TruncateAwards()
 	award2, err := db.GetAwardById(1)
@@ -67,13 +67,13 @@ func TestGetAwardsByType(t *testing.T) {
 	db := setupTestDb(t)
 	defer db.Close()
 
-	award1 := Award{0, WinnerAward, "Event Winner", 1114, ""}
+	award1 := Award{0, WinnerAward, "Event Winner", 1114, "", 0}
 	db.CreateAward(&award1)
-	award2 := Award{0, FinalistAward, "Event Finalist", 2056, ""}
+	award2 := Award{0, FinalistAward, "Event Finalist", 2056, "", 0}
 	db.CreateAward(&award2)
-	award3 := Award{0, JudgedAward, "Saftey Award", 254, ""}
+	award3 := Award{0, JudgedAward, "Saftey Award", 254, "", 0}
 	db.CreateAward(&award3)
-	award4 := Award{0, WinnerAward, "Event Winner", 254, ""}
+	award4 := Award{0, WinnerAward, "Event Winner", 254, "", 0}
 	db.CreateAward(&award4)
 
 	awards, err := db.GetAwardsByType(JudgedAward)

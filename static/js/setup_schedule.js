@@ -7,7 +7,7 @@ var blockTemplate = Handlebars.compile($("#blockTemplate").html());
 var blockMatches = {};
 
 // Adds a new scheduling block to the page.
-var addBlock = function (startTime, numMatches, matchSpacingSec) {
+var addBlock = function (startTime, numMatches, matchSpacingSec, fieldId) {
   var lastBlockNumber = getLastBlockNumber();
   if (!startTime) {
     if ($.isEmptyObject(blockMatches)) {
@@ -29,6 +29,9 @@ var addBlock = function (startTime, numMatches, matchSpacingSec) {
   $("#blockContainer").append(block);
   newDateTimePicker("startTimePicker" + lastBlockNumber, startTime.toDate());
   newDateTimePicker("endTimePicker" + lastBlockNumber, endTime.toDate());
+  if (fieldId) {
+    $("#fieldId" + lastBlockNumber).val(fieldId);
+  }
   updateBlock(lastBlockNumber);
 };
 
@@ -89,9 +92,14 @@ var generateSchedule = function () {
     addField("startTime" + i, $("#startTime" + k).val());
     addField("numMatches" + i, $("#numMatches" + k).text());
     addField("matchSpacingSec" + i, getMatchSpacingSec(k));
+    if ($("#fieldId" + k).length > 0) {
+      addField("fieldId" + i, $("#fieldId" + k).val());
+    }
     i++;
   });
   addField("numScheduleBlocks", i);
+  addField("preferMixed", $("#preferMixed").is(":checked") ? "true" : "false");
+  addField("scheduleSeed", $("#scheduleSeed").val() || "");
   form.submit();
 };
 

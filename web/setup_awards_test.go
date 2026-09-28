@@ -12,8 +12,8 @@ import (
 func TestSetupAwards(t *testing.T) {
 	web := setupTestWeb(t)
 
-	web.arena.Database.CreateAward(&model.Award{0, model.JudgedAward, "Spirit Award", 0, ""})
-	web.arena.Database.CreateAward(&model.Award{0, model.JudgedAward, "Saftey Award", 0, ""})
+	web.arena.Database.CreateAward(&model.Award{0, model.JudgedAward, "Spirit Award", 0, "", 0})
+	web.arena.Database.CreateAward(&model.Award{0, model.JudgedAward, "Saftey Award", 0, "", 0})
 
 	recorder := web.getHttpResponse("/setup/awards")
 	assert.Equal(t, 200, recorder.Code)

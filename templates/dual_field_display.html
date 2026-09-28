@@ -1,0 +1,44 @@
+{{/*
+Copyright 2026 Team 254. All Rights Reserved.
+
+Hub display showing both fields' current matches side by side.
+*/}}
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dual Field Display - {{.EventSettings.Name}} - Cheesy Arena</title>
+    <link rel="shortcut icon" href="/static/img/favicon.ico">
+    <link rel="stylesheet" href="/static/css/lib/bootstrap.min.css"/>
+    <link rel="stylesheet" href="/static/css/cheesy-arena.css"/>
+    <style>
+      html, body { height: 100%; margin: 0; color: #fff; font-family: "FuturaLT", sans-serif; overflow: hidden; }
+      #fields { display: flex; height: 100%; gap: 1vw; padding: 1vw; }
+      .field { flex: 1; display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.06);
+        border-radius: 1vw; padding: 1.5vw; }
+      .field-name { font-family: "FuturaLTBold", sans-serif; font-size: 3.5vw; text-transform: uppercase; }
+      .field-status { font-size: 1.6vw; color: #aaa; }
+      .match-name { font-size: 3vw; margin-top: 1vh; }
+      .match-time { font-size: 7vw; font-family: "FuturaLTBold", sans-serif; }
+      .alliances { display: flex; gap: 1vw; margin-top: auto; }
+      .alliance { flex: 1; border-radius: 0.8vw; padding: 1vw; text-align: center; }
+      .alliance.red { background: #b3261e; }
+      .alliance.blue { background: #1f5fbf; }
+      .alliance .score { font-size: 6vw; font-family: "FuturaLTBold", sans-serif; }
+      .alliance .teams { font-size: 2.2vw; }
+      .offline { opacity: 0.4; }
+      #notHub { font-size: 2vw; padding: 2vw; }
+    </style>
+  </head>
+  <body>
+    {{if .IsHub}}
+    <div id="fields"></div>
+    {{else}}
+    <div id="notHub">The dual-field display is only available on the multi-field hub.</div>
+    {{end}}
+    <script src="/static/js/lib/jquery.min.js"></script>
+    <script src="/static/js/lib/jquery.json-2.4.min.js"></script>
+    <script src="/static/js/lib/jquery.websocket-0.0.1.js"></script>
+    <script src="/static/js/cheesy-websocket.js"></script>
+    <script src="/static/js/dual_field_display.js"></script>
+  </body>
+</html>

@@ -7,7 +7,17 @@ var websocket;
 
 // Handles a websocket message to load a new match.
 const handleMatchLoad = function (data) {
-  fetch("/api/bracket/svg?activeMatch=current")
+  const urlParams = new URLSearchParams(window.location.search);
+  let bracketUrl = "/api/bracket/svg?activeMatch=current";
+  // Pass through the multi-conference view parameters (?bracket=all, ?conference=1|2|all, ?field=1|2).
+  const conference = urlParams.get("conference") || (urlParams.get("bracket") === "all" ? "all" : null);
+  if (conference) {
+    bracketUrl += "&conference=" + encodeURIComponent(conference);
+  }
+  if (urlParams.get("field")) {
+    bracketUrl += "&field=" + encodeURIComponent(urlParams.get("field"));
+  }
+  fetch(bracketUrl)
     .then(response => response.text())
     .then(svg => $("#bracket").html(svg));
 };

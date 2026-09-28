@@ -11,6 +11,7 @@ import (
 	"github.com/Team254/cheesy-arena/model"
 	"github.com/dchest/uniuri"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,23 +43,63 @@ func (web *Web) teamsPostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	conferences, err := web.arena.Database.EnsureConferences()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
 	var teamNumbers []int
-	for _, teamNumberString := range strings.Split(r.PostFormValue("teamNumbers"), "\r\n") {
-		teamNumber, err := strconv.Atoi(teamNumberString)
-		if err == nil {
-			teamNumbers = append(teamNumbers, teamNumber)
+	teamConferences := make(map[int]int)
+	teamNicknames := make(map[int]string)
+	var unrecognized []string
+	for _, line := range strings.Split(r.PostFormValue("teamNumbers"), "\n") {
+		// Each line is a team number, optionally followed by its conference (as "team,conference").
+		fields := strings.FieldsFunc(line, func(c rune) bool { return c == ',' || c == '\t' || c == ';' })
+		if len(fields) == 0 {
+			continue
 		}
+		teamNumber, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+		if err != nil {
+			continue
+		}
+		if len(fields) > 1 {
+			value := strings.TrimSpace(fields[1])
+			teamConferences[teamNumber] = resolveConferenceId(value, conferences)
+			if teamConferences[teamNumber] == 0 && value != "" && value != "0" && value != "-" {
+				unrecognized = append(unrecognized, fmt.Sprintf("%d (%q)", teamNumber, value))
+			}
+		}
+		if len(fields) > 2 {
+			// An optional third column is the team's nickname, used unless TBA provides one.
+			teamNicknames[teamNumber] = strings.TrimSpace(fields[2])
+		}
+		teamNumbers = append(teamNumbers, teamNumber)
 	}
 
 	progressPercentage = 5
 	progressIncrement := 95.0 / float64(len(teamNumbers))
 	for _, teamNumber := range teamNumbers {
-		team := model.Team{Id: teamNumber}
+		if existingTeam, err := web.arena.Database.GetTeamById(teamNumber); err == nil && existingTeam != nil {
+			// Re-importing an existing team only updates its conference.
+			if conferenceId, ok := teamConferences[teamNumber]; ok {
+				existingTeam.ConferenceId = conferenceId
+				if err = web.arena.Database.UpdateTeam(existingTeam); err != nil {
+					handleWebErr(w, err)
+					return
+				}
+			}
+			progressPercentage += progressIncrement
+			continue
+		}
+		team := model.Team{Id: teamNumber, ConferenceId: teamConferences[teamNumber]}
 		if web.arena.EventSettings.TbaDownloadEnabled {
 			if err := web.populateOfficialTeamInfo(&team); err != nil {
 				handleWebErr(w, err)
 				return
 			}
+		}
+		if team.Nickname == "" {
+			team.Nickname = teamNicknames[teamNumber]
 		}
 		if err := web.arena.Database.CreateTeam(&team); err != nil {
 			handleWebErr(w, err)
@@ -68,7 +109,21 @@ func (web *Web) teamsPostHandler(w http.ResponseWriter, r *http.Request) {
 		progressPercentage += progressIncrement
 	}
 	progressPercentage = 100
+	web.arena.NotifyDataChanged()
 
+	if len(unrecognized) > 0 {
+		var names []string
+		for _, conference := range conferences {
+			names = append(names, conference.ShortName)
+		}
+		message := fmt.Sprintf(
+			"Didn't recognize the conference for %s, so those teams have no conference. Use %s (or the conference "+
+				"name or number), then import them again or pick their conference below.",
+			strings.Join(unrecognized, ", "), strings.Join(names, " or "),
+		)
+		http.Redirect(w, r, "/setup/teams?error="+url.QueryEscape(message), 303)
+		return
+	}
 	http.Redirect(w, r, "/setup/teams", 303)
 }
 
@@ -145,10 +200,16 @@ func (web *Web) teamEditGetHandler(w http.ResponseWriter, r *http.Request) {
 		handleWebErr(w, err)
 		return
 	}
+	conferences, err := web.arena.Database.GetAllConferences()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
 	data := struct {
 		*model.EventSettings
 		*model.Team
-	}{web.arena.EventSettings, team}
+		Conferences []model.Conference
+	}{web.arena.EventSettings, team, conferences}
 	err = template.ExecuteTemplate(w, "base", data)
 	if err != nil {
 		handleWebErr(w, err)
@@ -190,6 +251,9 @@ func (web *Web) teamEditPostHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	team.HasConnected = r.PostFormValue("hasConnected") == "on"
+	if conferenceValue := r.PostFormValue("conferenceId"); conferenceValue != "" {
+		team.ConferenceId, _ = strconv.Atoi(conferenceValue)
+	}
 	err = web.arena.Database.UpdateTeam(team)
 	if err != nil {
 		handleWebErr(w, err)
@@ -277,11 +341,36 @@ func (web *Web) renderTeams(w http.ResponseWriter, r *http.Request, showErrorMes
 		handleWebErr(w, err)
 		return
 	}
+	conferences, err := web.arena.Database.EnsureConferences()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+	conferenceCounts := make(map[int]int)
+	for _, team := range teams {
+		conferenceCounts[team.ConferenceId]++
+	}
+	conferenceWarning := ""
+	if web.arena.EventSettings.MultiConferenceEnabled && len(teams) > 0 {
+		conferenceWarning = checkConferenceTeams(teams, conferences, web.arena.EventSettings).String()
+	}
 	data := struct {
 		*model.EventSettings
-		Teams            []model.Team
-		ShowErrorMessage bool
-	}{web.arena.EventSettings, teams, showErrorMessage}
+		Teams             []model.Team
+		ShowErrorMessage  bool
+		Conferences       []model.Conference
+		ConferenceCounts  map[int]int
+		ConferenceWarning string
+		ErrorMessage      string
+	}{
+		web.arena.EventSettings,
+		teams,
+		showErrorMessage,
+		conferences,
+		conferenceCounts,
+		conferenceWarning,
+		r.URL.Query().Get("error"),
+	}
 	err = template.ExecuteTemplate(w, "base", data)
 	if err != nil {
 		handleWebErr(w, err)
@@ -348,4 +437,74 @@ func (web *Web) populateOfficialTeamInfo(team *model.Team) error {
 	}
 
 	return nil
+}
+
+// Updates the conference of one or more teams, either from the per-team dropdowns or in bulk for the selected teams.
+func (web *Web) teamsConferencesPostHandler(w http.ResponseWriter, r *http.Request) {
+	if !web.userIsAdmin(w, r) {
+		return
+	}
+
+	alliances, err := web.arena.Database.GetAllAlliances()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+	if len(alliances) > 0 {
+		http.Redirect(w, r, "/setup/teams?error=Conferences+can%27t+change+once+alliances+exist.", 303)
+		return
+	}
+	if err = r.ParseForm(); err != nil {
+		handleWebErr(w, err)
+		return
+	}
+
+	teams, err := web.arena.Database.GetAllTeams()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+	selected := make(map[string]bool)
+	for _, teamId := range r.PostForm["selectedTeams"] {
+		selected[teamId] = true
+	}
+	bulkConferenceId, _ := strconv.Atoi(r.PostFormValue("bulkConferenceId"))
+	isBulk := r.PostFormValue("action") == "bulk"
+	for _, team := range teams {
+		teamIdString := strconv.Itoa(team.Id)
+		conferenceId := team.ConferenceId
+		if isBulk && selected[teamIdString] {
+			conferenceId = bulkConferenceId
+		} else if value, ok := r.PostForm["conference_"+teamIdString]; ok {
+			// Changes made in the per-team dropdowns are saved whichever button was pressed.
+			conferenceId, _ = strconv.Atoi(value[0])
+		}
+		if conferenceId != team.ConferenceId {
+			team.ConferenceId = conferenceId
+			if err = web.arena.Database.UpdateTeam(&team); err != nil {
+				handleWebErr(w, err)
+				return
+			}
+		}
+	}
+	web.arena.NotifyDataChanged()
+	http.Redirect(w, r, "/setup/teams", 303)
+}
+
+// Resolves a conference given by ID, short name or name (case-insensitive) to its ID, or 0 if it doesn't match any.
+func resolveConferenceId(value string, conferences []model.Conference) int {
+	if id, err := strconv.Atoi(value); err == nil {
+		for _, conference := range conferences {
+			if conference.Id == id {
+				return id
+			}
+		}
+		return 0
+	}
+	for _, conference := range conferences {
+		if strings.EqualFold(conference.ShortName, value) || strings.EqualFold(conference.Name, value) {
+			return conference.Id
+		}
+	}
+	return 0
 }

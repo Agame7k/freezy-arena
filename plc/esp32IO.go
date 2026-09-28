@@ -24,23 +24,23 @@ type Esp32 interface {
 	IsScoreTableHealthy() bool
 	IsRedEstopsHealthy() bool
 	IsBlueEstopsHealthy() bool
-	SetScoreTableAddress(string) 
-	SetRedAllianceStationEstopAddress(string) 
-	SetBlueAllianceStationEstopAddress(string) 
+	SetScoreTableAddress(string)
+	SetRedAllianceStationEstopAddress(string)
+	SetBlueAllianceStationEstopAddress(string)
 	SetPlc(Plc)
 }
 
 type Esp32IO struct {
-	ScoreTableIP		string
-	RedAllianceEstopsIP		string
-	BlueAllianceEstopsIP		string
-	scoreTableHealthy 	bool
-	RedEstopsHealthy 	bool
-	BlueEstopsHealthy 	bool
-	Plc Plc
+	ScoreTableIP         string
+	RedAllianceEstopsIP  string
+	BlueAllianceEstopsIP string
+	scoreTableHealthy    bool
+	RedEstopsHealthy     bool
+	BlueEstopsHealthy    bool
+	Plc                  Plc
 }
-const LoopPeriodMs = 1000 // Define the loop period in milliseconds
 
+const LoopPeriodMs = 1000 // Define the loop period in milliseconds
 
 // RequestPayload represents the structure of the incoming POST data.
 type RequestPayload struct {
@@ -52,39 +52,39 @@ func (esp32 *Esp32IO) SetScoreTableAddress(address string) {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		esp32.ScoreTableIP = address
-        return
-    }
-    if net.ParseIP(address) == nil {
-        log.Printf("Invalid Score Table IP address: %s", address)
-        return
-    }
-    esp32.ScoreTableIP = address
-    log.Printf("Set Score Table IP to: %s", esp32.ScoreTableIP)
+		return
+	}
+	if net.ParseIP(address) == nil {
+		log.Printf("Invalid Score Table IP address: %s", address)
+		return
+	}
+	esp32.ScoreTableIP = address
+	log.Printf("Set Score Table IP to: %s", esp32.ScoreTableIP)
 }
 func (esp32 *Esp32IO) SetRedAllianceStationEstopAddress(address string) {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		esp32.RedAllianceEstopsIP = address
-        return
-    }
-    if net.ParseIP(address) == nil {
-        log.Printf("Invalid Red Alliance Estops IP address: %s", address)
-        return
-    }
-    esp32.RedAllianceEstopsIP = address
+		return
+	}
+	if net.ParseIP(address) == nil {
+		log.Printf("Invalid Red Alliance Estops IP address: %s", address)
+		return
+	}
+	esp32.RedAllianceEstopsIP = address
 	log.Printf("Red Alliance Estops IP to: %s", esp32.RedAllianceEstopsIP)
 }
 func (esp32 *Esp32IO) SetBlueAllianceStationEstopAddress(address string) {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		esp32.BlueAllianceEstopsIP = address
-        return
-    }
-    if net.ParseIP(address) == nil {
-        log.Printf("Invalid Blue Alliance Estops IP address: %s", address)
-        return
-    }
-    esp32.BlueAllianceEstopsIP = address
+		return
+	}
+	if net.ParseIP(address) == nil {
+		log.Printf("Invalid Blue Alliance Estops IP address: %s", address)
+		return
+	}
+	esp32.BlueAllianceEstopsIP = address
 	log.Printf("Blue Alliance Estops IP to: %s", esp32.BlueAllianceEstopsIP)
 }
 
@@ -94,14 +94,14 @@ func (esp32 *Esp32IO) SetPlc(plc Plc) {
 
 // Checks if an IP address is reachable by attempting a TCP connection.
 func isDevicePresent(ip string, port string) error {
-    address := net.JoinHostPort(ip, port)
-    conn, err := net.DialTimeout("tcp", address, time.Second*2)
-    if err != nil {
-        //log.Printf("Device not reachable at %s: %v", address, err)
-        return err
-    } 
-    conn.Close()
-    return err
+	address := net.JoinHostPort(ip, port)
+	conn, err := net.DialTimeout("tcp", address, time.Second*2)
+	if err != nil {
+		//log.Printf("Device not reachable at %s: %v", address, err)
+		return err
+	}
+	conn.Close()
+	return err
 }
 
 // Run starts the ESP32 IO monitoring loop.
@@ -119,18 +119,18 @@ func (esp32 *Esp32IO) Run() {
 				time.Sleep(time.Second * plcRetryIntevalSec)
 				esp32.scoreTableHealthy = false
 				continue
-				}else{
-					if (!esp32.scoreTableHealthy){
-						log.Printf("Score Table Connected at: %s", esp32.ScoreTableIP)
-					}
-					esp32.scoreTableHealthy = true
+			} else {
+				if !esp32.scoreTableHealthy {
+					log.Printf("Score Table Connected at: %s", esp32.ScoreTableIP)
 				}
+				esp32.scoreTableHealthy = true
 			}
-			// Check if the Red Alliance Estops are healthy.
-			if !esp32.IsRedEstopsEnabled() {
-				// If the Red Alliance Estops are not enabled, don't check them.
-				esp32.RedEstopsHealthy= false
-				} else {
+		}
+		// Check if the Red Alliance Estops are healthy.
+		if !esp32.IsRedEstopsEnabled() {
+			// If the Red Alliance Estops are not enabled, don't check them.
+			esp32.RedEstopsHealthy = false
+		} else {
 			//log.Println("Red Estops IO Check")
 			err := isDevicePresent(esp32.RedAllianceEstopsIP, "80")
 			if err != nil {
@@ -138,18 +138,18 @@ func (esp32 *Esp32IO) Run() {
 				time.Sleep(time.Second * plcRetryIntevalSec)
 				esp32.RedEstopsHealthy = false
 				continue
-				}else{
-					if (!esp32.RedEstopsHealthy){
-						log.Printf("Red Estops Connected at: %s ", esp32.RedAllianceEstopsIP)
-					}
-					esp32.RedEstopsHealthy = true
+			} else {
+				if !esp32.RedEstopsHealthy {
+					log.Printf("Red Estops Connected at: %s ", esp32.RedAllianceEstopsIP)
 				}
+				esp32.RedEstopsHealthy = true
 			}
-			// Check if the Blue Alliance Estops are healthy.
-			if !esp32.IsBlueEstopsEnabled() {
-				// If the Blue Alliance Estops are not enabled, don't check them.
-				esp32.BlueEstopsHealthy = false
-				} else {
+		}
+		// Check if the Blue Alliance Estops are healthy.
+		if !esp32.IsBlueEstopsEnabled() {
+			// If the Blue Alliance Estops are not enabled, don't check them.
+			esp32.BlueEstopsHealthy = false
+		} else {
 			//log.Println("Blue Estops IO Check")
 			err := isDevicePresent(esp32.BlueAllianceEstopsIP, "80")
 			if err != nil {
@@ -157,8 +157,8 @@ func (esp32 *Esp32IO) Run() {
 				time.Sleep(time.Second * plcRetryIntevalSec)
 				esp32.BlueEstopsHealthy = false
 				continue
-			}else{
-				if (!esp32.BlueEstopsHealthy){
+			} else {
+				if !esp32.BlueEstopsHealthy {
 					log.Printf("Blue Estops Connected at: %s ", esp32.BlueAllianceEstopsIP)
 				}
 				esp32.BlueEstopsHealthy = true

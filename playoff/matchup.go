@@ -25,6 +25,12 @@ type Matchup struct {
 	NumMatchesPlayed           int
 	winningAllianceDestination MatchGroup
 	losingAllianceDestination  MatchGroup
+	// ConferenceId is the conference the matchup belongs to, or 0 for single-conference and championship matchups.
+	ConferenceId int
+	// Set on the final matchup of a conference bracket.
+	isConferenceFinal bool
+	// Set once the matchup has been relabeled for use in a multi-conference tournament.
+	relabeled bool
 }
 
 func (matchup *Matchup) Id() string {
@@ -184,9 +190,15 @@ func (matchup *Matchup) IsLosingAllianceEliminated() bool {
 	return matchup.losingAllianceDestination == nil
 }
 
-// isFinal returns true if the matchup represents the final matchup in the playoff tournament.
+// isFinal returns true if the matchup represents the final matchup in the playoff tournament, or the final of a
+// conference bracket that does not feed into a championship.
 func (matchup *Matchup) isFinal() bool {
-	return matchup.id == "F"
+	return matchup.id == "F" || matchup.isConferenceFinal && matchup.winningAllianceDestination == nil
+}
+
+// IsConferenceFinal returns true if the matchup is the final of a conference bracket.
+func (matchup *Matchup) IsConferenceFinal() bool {
+	return matchup.isConferenceFinal
 }
 
 // allianceDestination returns a string representing the given alliance's next destination in the tournament.
@@ -196,10 +208,14 @@ func (matchup *Matchup) allianceDestination(allianceId int) string {
 	}
 
 	if matchup.isFinal() {
+		label := "Tournament"
+		if matchup.isConferenceFinal {
+			label = "Conference"
+		}
 		if matchup.WinningAllianceId() == allianceId {
-			return "Tournament Winner"
+			return label + " Winner"
 		} else {
-			return "Tournament Finalist"
+			return label + " Finalist"
 		}
 	}
 
@@ -207,6 +223,9 @@ func (matchup *Matchup) allianceDestination(allianceId int) string {
 		return fmt.Sprintf("Advances to %s", formatDestinationMatchName(matchup.winningAllianceDestination))
 	} else {
 		if matchup.losingAllianceDestination == nil {
+			if matchup.isConferenceFinal {
+				return "Conference Finalist"
+			}
 			return "Eliminated"
 		}
 		return fmt.Sprintf("Advances to %s", formatDestinationMatchName(matchup.losingAllianceDestination))
@@ -225,4 +244,49 @@ func formatDestinationMatchName(destination MatchGroup) string {
 		destinationMatchName += " &ndash; " + destinationMatch.nameDetail
 	}
 	return destinationMatchName
+}
+
+// MatchupSource describes an earlier matchup that feeds an alliance into this one.
+type MatchupSource struct {
+	Matchup   *Matchup
+	UseWinner bool
+	IsRed     bool
+}
+
+// SourceMatchups returns the earlier matchups that feed alliances into this one (none for alliances that come
+// directly from alliance selection).
+func (matchup *Matchup) SourceMatchups() []MatchupSource {
+	var sources []MatchupSource
+	for i, source := range []allianceSource{matchup.redAllianceSource, matchup.blueAllianceSource} {
+		if typedSource, ok := source.(matchupSource); ok {
+			sources = append(
+				sources, MatchupSource{Matchup: typedSource.matchup, UseWinner: typedSource.useWinner, IsRed: i == 0},
+			)
+		}
+	}
+	return sources
+}
+
+// FirstMatchOrder returns the play order of the matchup's first match, for sorting matchups in order of play.
+func (matchup *Matchup) FirstMatchOrder() int {
+	if len(matchup.matchSpecs) == 0 {
+		return 0
+	}
+	return matchup.matchSpecs[0].order
+}
+
+// NameDetail returns the descriptive detail of the matchup's matches (e.g. "Round 2 Upper"), if any.
+func (matchup *Matchup) NameDetail() string {
+	if len(matchup.matchSpecs) == 0 {
+		return ""
+	}
+	return matchup.matchSpecs[0].nameDetail
+}
+
+// ShortName returns the short name of the matchup's first match (e.g. "NM3" or "NQF1-1").
+func (matchup *Matchup) ShortName() string {
+	if len(matchup.matchSpecs) == 0 {
+		return matchup.id
+	}
+	return matchup.matchSpecs[0].shortName
 }

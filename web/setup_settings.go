@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/Team254/cheesy-arena/field"
 	"github.com/Team254/cheesy-arena/model"
+	"github.com/Team254/cheesy-arena/node"
 	"io"
 	"log"
 	"net/http"
@@ -43,7 +44,15 @@ func (web *Web) settingsPostHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	previousSettings := *web.arena.EventSettings
 	eventSettings := web.arena.EventSettings
+	// On a validation error, puts the running settings back the way they were (nothing has been saved yet) and shows
+	// the form again with what was submitted, so that the operator only has to correct the problem.
+	rejectSettings := func(message string, conferences []model.Conference) {
+		submitted := *eventSettings
+		*eventSettings = previousSettings
+		web.renderSettingsForm(w, r, &submitted, conferences, message, activeSettingsTab)
+	}
 
 	previousEventName := eventSettings.Name
 	eventSettings.Name = r.PostFormValue("name")
@@ -71,7 +80,7 @@ func (web *Web) settingsPostHandler(w http.ResponseWriter, r *http.Request) {
 			numAlliances, _ = strconv.Atoi(r.PostFormValue("numPlayoffAlliances"))
 		}
 		if numAlliances < 2 || numAlliances > 16 {
-			web.renderSettingsWithStatus(w, r, "Number of alliances must be between 2 and 16.", activeSettingsTab, http.StatusOK)
+			rejectSettings("Number of alliances must be between 2 and 16.", nil)
 			return
 		}
 	} else {
@@ -86,9 +95,7 @@ func (web *Web) settingsPostHandler(w http.ResponseWriter, r *http.Request) {
 			numAlliances, _ = strconv.Atoi(r.PostFormValue("numPlayoffAlliances"))
 		}
 		if numAlliances < 4 || numAlliances > 8 {
-			web.renderSettingsWithStatus(
-				w, r, "Number of alliances for double elimination must be 4 to 8.", activeSettingsTab, http.StatusOK,
-			)
+			rejectSettings("Number of alliances for double elimination must be 4 to 8.", nil)
 			return
 		}
 	}
@@ -99,10 +106,7 @@ func (web *Web) settingsPostHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(alliances) > 0 {
-			web.renderSettingsWithStatus(
-				w, r, "Cannot change playoff type or size after alliance selection has been finalized.", activeSettingsTab,
-				http.StatusOK,
-			)
+			rejectSettings("Cannot change playoff type or size after alliance selection has been finalized.", nil)
 			return
 		}
 	}
@@ -192,8 +196,20 @@ func (web *Web) settingsPostHandler(w http.ResponseWriter, r *http.Request) {
 	eventSettings.LogoSuffix = r.PostFormValue("logosuffix")
 	eventSettings.FlashDSEnabled = r.PostFormValue("flashDSEnabled") == "on"
 
-	err := web.arena.Database.UpdateEventSettings(eventSettings)
+	message, submittedConferences, err := web.applyMultiSettings(r, eventSettings)
 	if err != nil {
+		*eventSettings = previousSettings
+		handleWebErr(w, err)
+		return
+	}
+	if message != "" {
+		rejectSettings(message, submittedConferences)
+		return
+	}
+
+	err = web.arena.Database.UpdateEventSettings(eventSettings)
+	if err != nil {
+		*eventSettings = previousSettings
 		handleWebErr(w, err)
 		return
 	}
@@ -213,6 +229,12 @@ func (web *Web) settingsPostHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Start or stop the hub service and node client if the multi-field role or connection changed.
+	if note := web.applyMultiFieldRole(&previousSettings); note != "" {
+		web.renderSettingsWithStatus(w, r, note, activeSettingsTab, http.StatusOK)
+		return
+	}
+
 	http.Redirect(w, r, "/setup/settings#"+activeSettingsTab, 303)
 }
 
@@ -222,7 +244,7 @@ func settingsSaveAllowed(matchState field.MatchState) bool {
 
 func settingsTabFromRequest(r *http.Request) string {
 	switch r.PostFormValue("activeSettingsTab") {
-	case "event", "game", "field", "publishing", "automation":
+	case "event", "game", "field", "publishing", "automation", "multiconference", "multifield":
 		return r.PostFormValue("activeSettingsTab")
 	default:
 		return "event"
@@ -295,6 +317,8 @@ func (web *Web) restoreDbHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	previousSettings := *web.arena.EventSettings
+
 	// Back up the current database.
 	err = web.arena.Database.Backup(web.arena.EventSettings.Name, "pre_restore")
 	if err != nil {
@@ -326,6 +350,21 @@ func (web *Web) restoreDbHandler(w http.ResponseWriter, r *http.Request) {
 	err = web.arena.LoadSettings()
 	if err != nil {
 		handleWebErr(w, err)
+		return
+	}
+
+	// The backup may be from a machine with another multi-field role, and a node's copy of the hub's data is now
+	// whatever was in the backup, so start or stop the hub and node services and fetch everything from the hub again.
+	note := web.applyMultiFieldRole(&previousSettings)
+	if web.node != nil {
+		go func(eventNode *node.Node) {
+			if err := eventNode.SyncAll(); err != nil {
+				log.Printf("Couldn't resync from the hub after restoring the database: %v", err)
+			}
+		}(web.node)
+	}
+	if note != "" {
+		web.renderSettings(w, r, note)
 		return
 	}
 
@@ -376,8 +415,11 @@ func (web *Web) clearDbHandler(w http.ResponseWriter, r *http.Request) {
 			handleWebErr(w, err)
 			return
 		}
-		web.arena.AllianceSelectionAlliances = []model.Alliance{}
-		web.arena.AllianceSelectionRankedTeams = []model.AllianceSelectionRankedTeam{}
+		web.arena.ResetAllianceSelectionStates()
+		if err = web.clearConferencePlayoffStartTimes(); err != nil {
+			handleWebErr(w, err)
+			return
+		}
 	}
 
 	http.Redirect(w, r, "/setup/settings", 303)
@@ -507,19 +549,50 @@ func (web *Web) renderSettings(w http.ResponseWriter, r *http.Request, errorMess
 func (web *Web) renderSettingsWithStatus(
 	w http.ResponseWriter, r *http.Request, errorMessage string, activeSettingsTab string, statusCode int,
 ) {
+	if statusCode != http.StatusOK {
+		w.WriteHeader(statusCode)
+	}
+	web.renderSettingsForm(w, r, web.arena.EventSettings, nil, errorMessage, activeSettingsTab)
+}
+
+// Renders the settings page showing the given settings and conferences (the saved ones if nil), which differ from the
+// running settings when a submission is shown again for correction.
+func (web *Web) renderSettingsForm(
+	w http.ResponseWriter,
+	r *http.Request,
+	settings *model.EventSettings,
+	conferences []model.Conference,
+	errorMessage string,
+	activeSettingsTab string,
+) {
 	template, err := web.parseFiles("templates/setup_settings.html", "templates/base.html")
 	if err != nil {
 		handleWebErr(w, err)
 		return
+	}
+	if conferences == nil {
+		if conferences, err = web.arena.Database.EnsureConferences(); err != nil {
+			handleWebErr(w, err)
+			return
+		}
 	}
 	data := struct {
 		*model.EventSettings
 		ErrorMessage      string
 		ActiveSettingsTab string
 		NexusBaseUrl      string
-	}{web.arena.EventSettings, errorMessage, activeSettingsTab, web.arena.NexusClient.BaseUrl}
-	if statusCode != http.StatusOK {
-		w.WriteHeader(statusCode)
+		Conferences       []model.Conference
+		// The role this machine is actually running in, which the form may not show if it wasn't saved.
+		RunningAsNode bool
+		RunningAsHub  bool
+	}{
+		settings,
+		errorMessage,
+		activeSettingsTab,
+		web.arena.NexusClient.BaseUrl,
+		conferences,
+		web.arena.EventSettings.IsNode(),
+		web.arena.EventSettings.IsHub(),
 	}
 	err = template.ExecuteTemplate(w, "base", data)
 	if err != nil {

@@ -29,8 +29,22 @@ func BuildRandomSchedule(
 	teams []model.Team, scheduleBlocks []model.ScheduleBlock, matchType model.MatchType,
 ) ([]model.Match, error) {
 	// Load the anonymized, pre-randomized match schedule for the given number of teams and matches per team.
-	numTeams := len(teams)
+	anonSchedule, err := loadAnonSchedule(len(teams), scheduleBlocks)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate a random permutation of the team ordering to fill into the pre-randomized schedule.
+	teamShuffle := schedulePerm(len(teams))
+	return buildScheduleFromTemplate(teams, scheduleBlocks, matchType, anonSchedule, teamShuffle)
+}
+
+// Loads the anonymized, pre-randomized match schedule for the given teams and schedule blocks.
+func loadAnonSchedule(numTeams int, scheduleBlocks []model.ScheduleBlock) ([][12]int, error) {
 	numMatches := countMatches(scheduleBlocks)
+	if numTeams == 0 {
+		return nil, fmt.Errorf("No teams are configured")
+	}
 	matchesPerTeam := int(float32(numMatches*TeamsPerMatch) / float32(numTeams))
 
 	// Adjust the number of matches to remove any excess from non-perfect block scheduling.
@@ -62,9 +76,18 @@ func BuildRandomSchedule(
 			}
 		}
 	}
+	return anonSchedule, nil
+}
 
-	// Generate a random permutation of the team ordering to fill into the pre-randomized schedule.
-	teamShuffle := schedulePerm(numTeams)
+// Fills the given team ordering into the anonymized schedule and assigns match names and times.
+func buildScheduleFromTemplate(
+	teams []model.Team,
+	scheduleBlocks []model.ScheduleBlock,
+	matchType model.MatchType,
+	anonSchedule [][12]int,
+	teamShuffle []int,
+) ([]model.Match, error) {
+	numMatches := len(anonSchedule)
 	matches := make([]model.Match, numMatches)
 	for i, anonMatch := range anonSchedule {
 		matches[i].Type = matchType

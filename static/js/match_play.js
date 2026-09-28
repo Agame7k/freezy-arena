@@ -500,6 +500,10 @@ $(function () {
     },
     scorePosted: function (event) {
       handleScorePosted(event.data);
+      handleHubResultStatus(event.data);
+    },
+    multiFieldStatus: function (event) {
+      handleMultiFieldStatus(event.data);
     },
     scoringStatus: function (event) {
       handleScoringStatus(event.data);
@@ -509,3 +513,90 @@ $(function () {
     },
   });
 });
+
+// Multi-field status of this machine, as last reported by the server.
+let multiFieldStatus = {};
+
+// Handles a websocket message to update the multi-field (hub/node) status banner.
+const handleMultiFieldStatus = function (data) {
+  multiFieldStatus = data;
+  const banner = $("#multiFieldStatus");
+  if (!data.IsNode && !data.SimulateMode) {
+    banner.hide();
+    return;
+  }
+  let text = "";
+  let cssClass = "alert-secondary";
+  if (data.IsNode) {
+    if (data.Connected && data.Approved) {
+      text = `${data.FieldName} &middot; Hub &#9679; connected &middot; ${data.OutboxSize} queued`;
+      cssClass = data.OutboxSize > 0 ? "alert-warning" : "alert-success";
+    } else if (data.Connected) {
+      text = `${data.FieldName} &middot; waiting for the hub admin to approve this field`;
+      cssClass = "alert-warning";
+    } else if (data.Refused) {
+      text = `NOT CONNECTED: the hub refused ${data.FieldName} &middot; ${data.OutboxSize} result` +
+        `${data.OutboxSize === 1 ? "" : "s"} queued`;
+      cssClass = "alert-danger";
+    } else {
+      text = `HUB OFFLINE: ${data.OutboxSize} result${data.OutboxSize === 1 ? "" : "s"} queued`;
+      cssClass = "alert-danger";
+    }
+    if (data.RejectedCount > 0) {
+      text += ` &middot; ${data.RejectedCount} rejected by the hub (export a results bundle or fix on the hub, then` +
+        ` resync)`;
+      cssClass = "alert-danger";
+    }
+  }
+  if (data.SimulateMode) {
+    text += (text ? " &middot; " : "") + "SIMULATION MODE (no field hardware)";
+  }
+  if (data.IsNode) {
+    if (data.LastError) {
+      // The advice comes first; the technical detail in brackets at the end is for whoever is debugging.
+      const escape = value => $("<div>").text(value).html();
+      const detailStart = data.LastError.lastIndexOf(" [");
+      if (detailStart > 0 && data.LastError.endsWith("]")) {
+        text += `<br><small>${escape(data.LastError.substring(0, detailStart))}</small>` +
+          `<details class="small"><summary>Technical detail</summary>` +
+          `${escape(data.LastError.substring(detailStart + 2, data.LastError.length - 1))}</details>`;
+      } else {
+        text += `<br><small>${escape(data.LastError)}</small>`;
+      }
+    }
+  }
+  banner.removeClass("alert-secondary alert-success alert-warning alert-danger").addClass(cssClass);
+  // Only redraw when the text changes, so that an opened "Technical detail" stays open.
+  if (banner.data("text") !== text) {
+    banner.data("text", text).html(text);
+  }
+  banner.show();
+};
+
+// Shows whether the last committed result reached the hub.
+const handleHubResultStatus = function (data) {
+  const status = $("#hubResultStatus");
+  if (!multiFieldStatus.IsNode || !data.Match || !data.Match.ShortName) {
+    status.hide();
+    return;
+  }
+  if (data.RankingsPending) {
+    status.removeClass("alert-info").addClass("alert-warning");
+    status.text(`${data.Match.ShortName} saved; queued for the hub (rankings pending)`);
+  } else {
+    status.removeClass("alert-warning").addClass("alert-info");
+    status.html(`${data.Match.ShortName} sent to hub &#10003;`);
+  }
+  status.show();
+};
+
+// Claims the next available qualification match from the hub (dynamic field assignment).
+const loadNextAvailable = function () {
+  websocket.send("loadNextAvailable");
+};
+
+// Plays the next match instantly with a random score (simulation mode only).
+const simulateMatch = function () {
+  const activeTab = $(".match-list.tab-pane.active").attr("id") || "Qualification";
+  websocket.send("simulateMatch", activeTab);
+};

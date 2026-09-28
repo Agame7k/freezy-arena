@@ -7,17 +7,18 @@ package web
 
 import (
 	"fmt"
+	"github.com/Team254/cheesy-arena/field"
+	"github.com/Team254/cheesy-arena/game"
+	"github.com/Team254/cheesy-arena/hub"
+	"github.com/Team254/cheesy-arena/model"
+	"github.com/Team254/cheesy-arena/node"
+	"github.com/Team254/cheesy-arena/tournament"
 	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
-
-	"github.com/Team254/cheesy-arena/game"
-
-	"github.com/Team254/cheesy-arena/field"
-	"github.com/Team254/cheesy-arena/model"
 )
 
 const (
@@ -28,6 +29,10 @@ const (
 type Web struct {
 	arena           *field.Arena
 	templateHelpers template.FuncMap
+	hub             *hub.Hub
+	node            *node.Node
+	simulator       autoSimulator
+	eventRunner     eventRunner
 }
 
 func NewWeb(arena *field.Arena) *Web {
@@ -68,6 +73,21 @@ func NewWeb(arena *field.Arena) *Web {
 		},
 		"toUpper": func(str string) string {
 			return strings.ToUpper(str)
+		},
+		"intSlice": func(values ...int) []int {
+			return values
+		},
+		"formatDuration": tournament.FormatDuration,
+		// The settings this machine is running with, for page headers that must not reflect unsaved form values.
+		"runningSettings": func() *model.EventSettings {
+			return web.arena.EventSettings
+		},
+		"conferenceName": conferenceNameHelper,
+		"seriesRounds": func() []string {
+			return []string{"EF", "QF", "SF", "F"}
+		},
+		"seriesLengthOptions": func() []int {
+			return []int{1, 3, 5}
 		},
 
 		// MatchType enum values.
@@ -155,6 +175,8 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /displays/audience/websocket", web.audienceDisplayWebsocketHandler)
 	mux.HandleFunc("GET /displays/bracket", web.bracketDisplayHandler)
 	mux.HandleFunc("GET /displays/bracket/websocket", web.bracketDisplayWebsocketHandler)
+	mux.HandleFunc("GET /displays/dual_field", web.dualFieldDisplayHandler)
+	mux.HandleFunc("GET /displays/dual_field/websocket", web.dualFieldDisplayWebsocketHandler)
 	mux.HandleFunc("GET /displays/field_monitor", web.fieldMonitorDisplayHandler)
 	mux.HandleFunc("GET /displays/field_monitor/websocket", web.fieldMonitorDisplayWebsocketHandler)
 	mux.HandleFunc("GET /displays/logo", web.logoDisplayHandler)
@@ -202,10 +224,10 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /reports/pdf/schedule/{type}", web.schedulePdfReportHandler)
 	mux.HandleFunc("GET /reports/pdf/teams", web.teamsPdfReportHandler)
 	mux.HandleFunc("GET /setup/awards", web.awardsGetHandler)
-	mux.HandleFunc("POST /setup/awards", web.awardsPostHandler)
+	mux.HandleFunc("POST /setup/awards", web.hubOwnedData(web.awardsPostHandler))
 	mux.HandleFunc("GET /setup/breaks", web.breaksGetHandler)
-	mux.HandleFunc("POST /setup/breaks", web.breaksPostHandler)
-	mux.HandleFunc("POST /setup/db/clear/{type}", web.clearDbHandler)
+	mux.HandleFunc("POST /setup/breaks", web.hubOwnedData(web.breaksPostHandler))
+	mux.HandleFunc("POST /setup/db/clear/{type}", web.hubOwnedData(web.clearDbHandler))
 	mux.HandleFunc("POST /setup/db/restore", web.restoreDbHandler)
 	mux.HandleFunc("GET /setup/db/save", web.saveDbHandler)
 	mux.HandleFunc("GET /setup/displays", web.displaysGetHandler)
@@ -218,8 +240,8 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /setup/lower_thirds", web.lowerThirdsGetHandler)
 	mux.HandleFunc("GET /setup/lower_thirds/websocket", web.lowerThirdsWebsocketHandler)
 	mux.HandleFunc("GET /setup/schedule", web.scheduleGetHandler)
-	mux.HandleFunc("POST /setup/schedule/generate", web.scheduleGeneratePostHandler)
-	mux.HandleFunc("POST /setup/schedule/save", web.scheduleSavePostHandler)
+	mux.HandleFunc("POST /setup/schedule/generate", web.hubOwnedData(web.scheduleGeneratePostHandler))
+	mux.HandleFunc("POST /setup/schedule/save", web.hubOwnedData(web.scheduleSavePostHandler))
 	mux.HandleFunc("GET /setup/settings", web.settingsGetHandler)
 	mux.HandleFunc("POST /setup/settings", web.settingsPostHandler)
 	mux.HandleFunc("GET /setup/settings/publish_alliances", web.settingsPublishAlliancesHandler)
@@ -230,14 +252,15 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /setup/sponsor_slides", web.sponsorSlidesGetHandler)
 	mux.HandleFunc("POST /setup/sponsor_slides", web.sponsorSlidesPostHandler)
 	mux.HandleFunc("GET /setup/teams", web.teamsGetHandler)
-	mux.HandleFunc("POST /setup/teams", web.teamsPostHandler)
-	mux.HandleFunc("POST /setup/teams/{id}/delete", web.teamDeletePostHandler)
+	mux.HandleFunc("POST /setup/teams", web.hubOwnedData(web.teamsPostHandler))
+	mux.HandleFunc("POST /setup/teams/{id}/delete", web.hubOwnedData(web.teamDeletePostHandler))
 	mux.HandleFunc("GET /setup/teams/{id}/edit", web.teamEditGetHandler)
-	mux.HandleFunc("POST /setup/teams/{id}/edit", web.teamEditPostHandler)
-	mux.HandleFunc("POST /setup/teams/clear", web.teamsClearHandler)
-	mux.HandleFunc("GET /setup/teams/generate_wpa_keys", web.teamsGenerateWpaKeysHandler)
+	mux.HandleFunc("POST /setup/teams/{id}/edit", web.hubOwnedData(web.teamEditPostHandler))
+	mux.HandleFunc("POST /setup/teams/clear", web.hubOwnedData(web.teamsClearHandler))
+	mux.HandleFunc("POST /setup/teams/conferences", web.hubOwnedData(web.teamsConferencesPostHandler))
+	mux.HandleFunc("GET /setup/teams/generate_wpa_keys", web.hubOwnedData(web.teamsGenerateWpaKeysHandler))
 	mux.HandleFunc("GET /setup/teams/progress", web.teamsUpdateProgressBarHandler)
-	mux.HandleFunc("GET /setup/teams/refresh", web.teamsRefreshHandler)
+	mux.HandleFunc("GET /setup/teams/refresh", web.hubOwnedData(web.teamsRefreshHandler))
 
 	// Freezy Arena
 	mux.HandleFunc("GET /help/freezy/field_monitor_help", web.fieldMonitorDisplayHelpHandler)
@@ -251,16 +274,18 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /panel/freezy/eStopControl/{alliance}/websocket", web.scoringPanelWebsocketHandler)
 	mux.HandleFunc("GET /api/freezy/alternateIO/PLC_Coils", web.getAllPlcCoilsGetHandler)
 	mux.HandleFunc("POST /api/freezy/startMatch", web.startMatchPostHandler)
-	mux.HandleFunc("POST /panel/freezy/add_practice_match", web.addPracticeMatchPostHandler)
+	mux.HandleFunc("POST /panel/freezy/add_practice_match", web.hubOwnedData(web.addPracticeMatchPostHandler))
 	mux.HandleFunc("GET /panel/freezy/add_practice_match", web.addPracticeMatchGetHandler)
-	mux.HandleFunc("POST /panel/freezy/edit_practice_match", web.editPracticeMatchHandler)
+	mux.HandleFunc("POST /panel/freezy/edit_practice_match", web.hubOwnedData(web.editPracticeMatchHandler))
 	mux.HandleFunc("GET /api/freezy/field_stack_light", web.fieldStackLightGetHandler)
 	mux.HandleFunc("GET /api/freezy/team_stack_light", web.teamStackLightGetHandler)
 	mux.HandleFunc("POST /freezy/upload/image", web.uploadImagePostHandler)
 	mux.HandleFunc("GET /freezy/upload", web.uploadImagePageHandler)
 	mux.HandleFunc("POST /api/freezy/register_values", web.setPLCRegister)
 	mux.HandleFunc("GET /api/plc/websocket", web.plcWebsocketHandler)
-    
+
+	web.addMultiFieldRoutes(mux)
+
 	return mux
 }
 
@@ -280,4 +305,3 @@ func (web *Web) parseFiles(filenames ...string) (*template.Template, error) {
 	template := template.New("").Funcs(web.templateHelpers)
 	return template.ParseFiles(paths...)
 }
-

@@ -17,6 +17,7 @@ Base template used by most pages to include common resources and optionally rend
       {{template "head_common" .}}
     </head>
     <body>
+      {{template "field_badge" .}}
       <nav class="navbar navbar-expand-lg bg-body-tertiary">
         <div class="container">
           <a class="navbar-brand" href="/">Freezy Arena a fork of Cheesy Arena</a>
@@ -41,6 +42,7 @@ Base template used by most pages to include common resources and optionally rend
               <a href="#" class="nav-link" data-bs-toggle="dropdown" role="button">Run</a>
               <div class="dropdown-menu">
                 <a class="dropdown-item" href="/match_play">Match Play</a>
+                <a class="dropdown-item" href="/event_control">Event Control (Hub)</a>
                 <a class="dropdown-item" href="/match_review">Match Review</a>
                 <a class="dropdown-item" href="/match_logs">Match Logs</a>
                 <a class="dropdown-item" href="/alliance_selection">Alliance Selection</a>
@@ -104,6 +106,7 @@ Base template used by most pages to include common resources and optionally rend
                 <a class="dropdown-item" href="/displays/announcer">Announcer</a>
                 <a class="dropdown-item" href="/displays/audience">Audience</a>
                 <a class="dropdown-item" href="/displays/bracket">Bracket</a>
+                <a class="dropdown-item" href="/displays/dual_field">Dual Field (hub)</a>
                 <a class="dropdown-item" href="/displays/field_monitor">Field Monitor</a>
                 <a class="dropdown-item" href="/displays/field_monitor?fta=true">Field Monitor (FTA)</a>
                 <a class="dropdown-item" href="/displays/field_monitor?ds=true&reversed=true">Field Monitor (Blue DS)</a>
@@ -111,6 +114,7 @@ Base template used by most pages to include common resources and optionally rend
                 <a class="dropdown-item" href="/displays/logo">Logo</a>
                 <a class="dropdown-item" href="/displays/queueing">Queueing</a>
                 <a class="dropdown-item" href="/displays/rankings">Standings</a>
+                <a class="dropdown-item" href="/displays/rankings?conference=split">Standings (conferences side by side)</a>
                 <a class="dropdown-item" href="/displays/wall">Wall</a>
                 <a class="dropdown-item" href="/displays/webpage">Web Page</a>
                 <div class="dropdown-divider"></div>
@@ -179,6 +183,7 @@ Base template used by most pages to include common resources and optionally rend
     {{template "head" .}}
   </head>
   <body>
+    {{template "field_badge" .}}
     <div class="container">
       {{template "body" .}}
     </div>
@@ -188,8 +193,54 @@ Base template used by most pages to include common resources and optionally rend
 </html>
 {{end}}
 
+{{define "field_badge"}}
+{{with runningSettings}}
+{{if .IsNode}}
+<div class="text-center bg-warning text-dark py-1 small">
+  <span class="fw-bold text-uppercase">{{.DisplayFieldName}}</span>
+  &middot; field node: teams, schedule, alliances and awards come from the hub
+  {{if .HubAddress}}
+  &middot; <a class="text-dark fw-semibold" href="{{.HubAddress}}/event_control" target="_blank">open the hub</a>
+  {{end}}
+</div>
+{{else if .IsHub}}
+<div class="text-center fw-bold text-uppercase bg-info text-dark py-1">
+  Multi-field hub &middot; <a class="text-dark" href="/event_control">Event Control</a>
+</div>
+{{end}}
+{{end}}
+{{end}}
+
+{{/* On a field node, explains that a page's data comes from the hub and disables its forms. Takes the page's path. */}}
+{{define "hub_owned_notice"}}
+{{with runningSettings}}
+{{if .IsNode}}
+<div class="alert alert-warning d-flex align-items-center gap-3">
+  <i class="bi bi-diagram-3 fs-4"></i>
+  <div class="flex-grow-1">
+    <b>View only.</b> This laptop runs {{.DisplayFieldName}}, so this page shows the hub's data. Make changes on the
+    hub; they reach this field within a few seconds.
+  </div>
+  {{if .HubAddress}}
+  <a class="btn btn-primary text-nowrap" target="_blank" href="{{.HubAddress}}{{$}}">Open on the hub</a>
+  {{end}}
+</div>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("form[method=POST], form[method=post]").forEach(function (form) {
+      form.querySelectorAll("input, select, textarea, button").forEach(function (element) {
+        // Controls marked data-keep-enabled only change what is shown (e.g. which match type), so they stay usable.
+        element.disabled = !element.hasAttribute("data-keep-enabled");
+      });
+    });
+  });
+</script>
+{{end}}
+{{end}}
+{{end}}
+
 {{define "head_common"}}
-<title>{{template "title" .}} - {{.EventSettings.Name}} - Cheesy Arena</title>
+<title>{{template "title" .}}{{with runningSettings}}{{if .DisplayFieldName}} ({{.DisplayFieldName}}){{end}}{{end}} - {{.EventSettings.Name}} - Cheesy Arena</title>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="shortcut icon" href="/static/img/favicon.ico">

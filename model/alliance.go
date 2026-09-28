@@ -11,6 +11,10 @@ type Alliance struct {
 	Id      int `db:"id,manual"`
 	TeamIds []int
 	Lineup  [3]int
+	// ConferenceId is the conference the alliance belongs to, or 0 in a single-conference event.
+	ConferenceId int
+	// Seed is the alliance number within its conference (equal to Id in a single-conference event).
+	Seed int
 }
 
 type AllianceSelectionRankedTeam struct {
@@ -58,6 +62,9 @@ func (database *Database) UpdateAllianceFromMatch(allianceId int, matchTeamIds [
 	alliance, err := database.GetAllianceById(allianceId)
 	if err != nil {
 		return err
+	}
+	if alliance == nil {
+		return nil
 	}
 
 	changed := false

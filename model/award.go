@@ -13,6 +13,8 @@ type Award struct {
 	AwardName  string
 	TeamId     int
 	PersonName string
+	// ConferenceId is set on conference-specific awards, and is 0 otherwise.
+	ConferenceId int
 }
 
 type AwardType int
@@ -21,6 +23,10 @@ const (
 	JudgedAward AwardType = iota
 	FinalistAward
 	WinnerAward
+	ConferenceWinnerAward
+	ConferenceFinalistAward
+	EventChampionAward
+	EventFinalistAward
 )
 
 func (database *Database) CreateAward(award *Award) error {

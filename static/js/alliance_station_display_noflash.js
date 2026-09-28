@@ -34,8 +34,27 @@ var handleAllianceStationDisplayMode = function (targetScreen) {
   }
 };
 
+// Shows the field name in the corner so that volunteers can tell the two fields' displays apart.
+var showFieldName = function (event) {
+  let badge = $("#fieldNameBadge");
+  const fieldName = event && event.FieldName;
+  if (!fieldName) {
+    badge.hide();
+    return;
+  }
+  if (badge.length === 0) {
+    badge = $('<div id="fieldNameBadge"></div>').css({
+      position: "fixed", top: "0.3em", left: "0.5em", zIndex: 1000, color: "#fff", fontSize: "2em",
+      textTransform: "uppercase", background: "rgba(0, 0, 0, 0.6)", padding: "0 0.4em", borderRadius: "0.2em",
+    });
+    $("body").append(badge);
+  }
+  badge.text(fieldName).show();
+};
+
 // Handles a websocket message to update the team to display.
 var handleMatchLoad = function (data) {
+  showFieldName(data.Event);
   if (station !== "") {
     var team = data.Teams[station];
     if (team) {
@@ -62,7 +81,10 @@ var handleMatchLoad = function (data) {
       offFieldTeams = data.BlueOffFieldTeams;
     }
     if (playoffAlliance > 0) {
-      let playoffAllianceInfo = `Alliance ${playoffAlliance}`;
+      // In a multi-conference event, alliances are labeled by conference and seed (e.g. N3).
+      const event = data.Event || {};
+      const allianceLabel = (station[0] === "B" ? event.BlueAllianceLabel : event.RedAllianceLabel) || playoffAlliance;
+      let playoffAllianceInfo = `Alliance ${allianceLabel}`;
       if (offFieldTeams.length) {
         playoffAllianceInfo += `&emsp; Not on field: ${offFieldTeams.map(team => team.Id).join(", ")}`;
       }

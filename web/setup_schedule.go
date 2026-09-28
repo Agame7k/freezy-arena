@@ -11,12 +11,14 @@ import (
 	"github.com/Team254/cheesy-arena/tournament"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // Global vars to hold schedules that are in the process of being generated.
 var cachedMatches = make(map[model.MatchType][]model.Match)
 var cachedTeamFirstMatches = make(map[model.MatchType]map[int]string)
+var cachedScheduleReports = make(map[model.MatchType]*tournament.ScheduleReport)
 
 // Shows the schedule editing page.
 func (web *Web) scheduleGetHandler(w http.ResponseWriter, r *http.Request) {
@@ -90,12 +92,33 @@ func (web *Web) scheduleGeneratePostHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	matches, err := tournament.BuildRandomSchedule(teams, scheduleBlocks, matchType)
+	settings := web.arena.EventSettings
+	preferMixed := settings.MultiConferenceEnabled && r.PostFormValue("preferMixed") == "true"
+	multiField := settings.IsHub()
+	var matches []model.Match
+	var report *tournament.ScheduleReport
+	if preferMixed || multiField || r.PostFormValue("scheduleSeed") != "" {
+		seed, _ := strconv.ParseInt(strings.TrimSpace(r.PostFormValue("scheduleSeed")), 10, 64)
+		matches, report, err = tournament.BuildScheduleWithOptions(
+			teams,
+			scheduleBlocks,
+			matchType,
+			tournament.ScheduleOptions{
+				Seed:                   seed,
+				PreferMixedConferences: preferMixed,
+				MultiField:             multiField,
+				AssignmentMode:         settings.QualFieldAssignmentMode,
+			},
+		)
+	} else {
+		matches, err = tournament.BuildRandomSchedule(teams, scheduleBlocks, matchType)
+	}
 	if err != nil {
 		web.renderSchedule(w, r, fmt.Sprintf("Error generating schedule: %s.", err.Error()))
 		return
 	}
 	cachedMatches[matchType] = matches
+	cachedScheduleReports[matchType] = report
 
 	// Determine each team's first match.
 	teamFirstMatches := make(map[int]string)
@@ -192,6 +215,15 @@ func (web *Web) renderSchedule(w http.ResponseWriter, r *http.Request, errorMess
 		handleWebErr(w, err)
 		return
 	}
+	conferences, err := web.arena.Database.GetAllConferences()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+	teamConferences := make(map[int]int, len(teams))
+	for _, team := range teams {
+		teamConferences[team.Id] = team.ConferenceId
+	}
 	data := struct {
 		*model.EventSettings
 		MatchType        model.MatchType
@@ -200,6 +232,10 @@ func (web *Web) renderSchedule(w http.ResponseWriter, r *http.Request, errorMess
 		Matches          []model.Match
 		TeamFirstMatches map[int]string
 		ErrorMessage     string
+		Report           *tournament.ScheduleReport
+		Conferences      map[int]model.Conference
+		TeamConferences  map[int]int
+		ShowFields       bool
 	}{
 		web.arena.EventSettings,
 		matchType,
@@ -208,6 +244,10 @@ func (web *Web) renderSchedule(w http.ResponseWriter, r *http.Request, errorMess
 		cachedMatches[matchType],
 		cachedTeamFirstMatches[matchType],
 		errorMessage,
+		cachedScheduleReports[matchType],
+		model.ConferenceMap(conferences),
+		teamConferences,
+		web.arena.EventSettings.IsHub(),
 	}
 	err = template.ExecuteTemplate(w, "base", data)
 	if err != nil {
@@ -240,6 +280,7 @@ func getScheduleBlocks(r *http.Request) ([]model.ScheduleBlock, error) {
 		if err != nil {
 			returnErr = err
 		}
+		scheduleBlocks[i].FieldId, _ = strconv.Atoi(r.PostFormValue(fmt.Sprintf("fieldId%d", i)))
 	}
 	return scheduleBlocks, returnErr
 }

@@ -1,4 +1,15 @@
 <b class="btn btn-primary" onclick="loadMatch(0);">Load Test Match</b>
+{{if .DynamicMode}}
+<b class="btn btn-success" onclick="loadNextAvailable();">Load Next Available</b>
+{{end}}
+{{if .SimulateMode}}
+<b class="btn btn-warning" onclick="simulateMatch();" title="Plays the next match instantly with a random score">
+  Simulate Match
+</b>
+{{end}}
+{{if .FieldName}}
+<div class="mt-2"><span class="badge text-bg-dark">Showing only matches on {{.FieldName}}</span></div>
+{{end}}
 <ul class="nav nav-tabs mt-4">
   <li>
     <a href="#Practice" class="nav-link{{if eq .CurrentMatchType practiceMatch }} active{{end}}" data-bs-toggle="tab">

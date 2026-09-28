@@ -95,70 +95,110 @@ func DeleteAward(database *model.Database, awardId int) error {
 
 // Generates awards and lower thirds for the tournament winners and finalists.
 func CreateOrUpdateWinnerAndFinalistAwards(database *model.Database, winnerAllianceId, finalistAllianceId int) error {
+	return createOrUpdateAllianceAwards(
+		database, winnerAllianceId, finalistAllianceId, model.WinnerAward, model.FinalistAward, "Winner", "Finalist", 0,
+	)
+}
+
+// Generates awards and lower thirds for the winners and finalists of the given conference's bracket.
+func CreateOrUpdateConferenceAwards(
+	database *model.Database, conference *model.Conference, winnerAllianceId, finalistAllianceId int,
+) error {
+	return createOrUpdateAllianceAwards(
+		database,
+		winnerAllianceId,
+		finalistAllianceId,
+		model.ConferenceWinnerAward,
+		model.ConferenceFinalistAward,
+		conference.Name+" Conference Winner",
+		conference.Name+" Conference Finalist",
+		conference.Id,
+	)
+}
+
+// Generates awards and lower thirds for the event champions and, if the championship format has one, the event
+// finalists of a multi-conference event.
+func CreateOrUpdateEventChampionAwards(database *model.Database, winnerAllianceId, finalistAllianceId int) error {
+	return createOrUpdateAllianceAwards(
+		database,
+		winnerAllianceId,
+		finalistAllianceId,
+		model.EventChampionAward,
+		model.EventFinalistAward,
+		"Event Champion",
+		"Event Finalist",
+		0,
+	)
+}
+
+// Generates the winner and finalist awards of the given types, replacing any existing awards of those types (and
+// conference). A finalist alliance ID of zero skips the finalist awards.
+func createOrUpdateAllianceAwards(
+	database *model.Database,
+	winnerAllianceId, finalistAllianceId int,
+	winnerType, finalistType model.AwardType,
+	winnerName, finalistName string,
+	conferenceId int,
+) error {
 	var winnerAlliance, finalistAlliance *model.Alliance
 	var err error
 	if winnerAlliance, err = database.GetAllianceById(winnerAllianceId); err != nil {
 		return err
 	}
-	if finalistAlliance, err = database.GetAllianceById(finalistAllianceId); err != nil {
-		return err
+	if winnerAlliance == nil || len(winnerAlliance.TeamIds) == 0 {
+		return fmt.Errorf("Winner and/or finalist alliances do not exist or do not contain teams.")
 	}
-	if winnerAlliance == nil || finalistAlliance == nil {
-		return fmt.Errorf("Winner and/or finalist alliances do not exist.")
-	}
-	if len(winnerAlliance.TeamIds) == 0 || len(finalistAlliance.TeamIds) == 0 {
-		return fmt.Errorf("Winner and/or finalist alliances do not contain teams.")
+	if finalistAllianceId > 0 {
+		if finalistAlliance, err = database.GetAllianceById(finalistAllianceId); err != nil {
+			return err
+		}
+		if finalistAlliance == nil || len(finalistAlliance.TeamIds) == 0 {
+			return fmt.Errorf("Winner and/or finalist alliances do not exist or do not contain teams.")
+		}
 	}
 
 	// Clear out any awards that may exist if the final match was scored more than once.
-	winnerAwards, err := database.GetAwardsByType(model.WinnerAward)
+	winnerAwards, err := database.GetAwardsByType(winnerType)
 	if err != nil {
 		return err
 	}
-	finalistAwards, err := database.GetAwardsByType(model.FinalistAward)
+	finalistAwards, err := database.GetAwardsByType(finalistType)
 	if err != nil {
 		return err
 	}
 	for _, award := range append(winnerAwards, finalistAwards...) {
+		if award.ConferenceId != conferenceId {
+			continue
+		}
 		if err = DeleteAward(database, award.Id); err != nil {
 			return err
 		}
 	}
 
 	// Create the finalist awards first since they're usually presented first.
-	finalistAward := model.Award{
-		AwardName: "Finalist",
-		Type:      model.FinalistAward,
-		TeamId:    finalistAlliance.TeamIds[0],
-	}
-	if err = CreateOrUpdateAward(database, &finalistAward, true); err != nil {
-		return err
-	}
-	for _, allianceTeamId := range finalistAlliance.TeamIds[1:] {
-		finalistAward.Id = 0
-		finalistAward.TeamId = allianceTeamId
-		if err = CreateOrUpdateAward(database, &finalistAward, false); err != nil {
+	if finalistAlliance != nil {
+		if err = createAllianceAwards(database, finalistAlliance, finalistType, finalistName, conferenceId); err != nil {
 			return err
 		}
 	}
+	return createAllianceAwards(database, winnerAlliance, winnerType, winnerName, conferenceId)
+}
 
-	// Create the winner awards.
-	winnerAward := model.Award{
-		AwardName: "Winner",
-		Type:      model.WinnerAward,
-		TeamId:    winnerAlliance.TeamIds[0],
-	}
-	if err = CreateOrUpdateAward(database, &winnerAward, true); err != nil {
+// Creates an award of the given type for each team in the alliance, with an intro lower third for the first.
+func createAllianceAwards(
+	database *model.Database, alliance *model.Alliance, awardType model.AwardType, awardName string, conferenceId int,
+) error {
+	award := model.Award{AwardName: awardName, Type: awardType, TeamId: alliance.TeamIds[0], ConferenceId: conferenceId}
+	if err := CreateOrUpdateAward(database, &award, true); err != nil {
 		return err
 	}
-	for _, allianceTeamId := range winnerAlliance.TeamIds[1:] {
-		winnerAward.Id = 0
-		winnerAward.TeamId = allianceTeamId
-		if err = CreateOrUpdateAward(database, &winnerAward, false); err != nil {
+	for _, allianceTeamId := range alliance.TeamIds[1:] {
+		award.Id = 0
+		award.TeamId = allianceTeamId
+		if err := CreateOrUpdateAward(database, &award, false); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 

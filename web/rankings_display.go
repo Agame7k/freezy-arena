@@ -13,7 +13,7 @@ import (
 
 // Renders the display which shows scrolling rankings.
 func (web *Web) rankingsDisplayHandler(w http.ResponseWriter, r *http.Request) {
-	if !web.enforceDisplayConfiguration(w, r, map[string]string{"scrollMsPerRow": "1000"}) {
+	if !web.enforceDisplayConfiguration(w, r, map[string]string{"scrollMsPerRow": "1000", "conference": "auto"}) {
 		return
 	}
 

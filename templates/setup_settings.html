@@ -46,6 +46,18 @@ UI for configuring event settings.
               Automation
             </button>
           </li>
+          <li class="nav-item">
+            <button class="nav-link" id="multiconference-tab" data-bs-toggle="tab" data-bs-target="#multiconference"
+              type="button" role="tab">
+              Multi-Conference
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" id="multifield-tab" data-bs-toggle="tab" data-bs-target="#multifield"
+              type="button" role="tab">
+              Multi-Field
+            </button>
+          </li>
         </ul>
         <div class="tab-content">
           <div class="tab-pane" id="event" role="tabpanel">
@@ -178,6 +190,11 @@ UI for configuring event settings.
                   Load Database from Backup
                 </button>
               </div>
+              {{if .RunningAsNode}}
+              <div class="form-text mt-2">
+                This field's matches, results and alliances are copied from the hub, so clear them on the hub instead.
+              </div>
+              {{else}}
               <div class="mt-2">
                 <button type="button" class="btn btn-danger" onclick="$('#confirmClearDataPlayoff').modal('show');">
                   Clear Playoff/Alliance Data
@@ -194,6 +211,7 @@ UI for configuring event settings.
                   Clear Practice Data
                 </button>
               </div>
+              {{end}}
             </fieldset>
           </div>
           <div class="tab-pane" id="game" role="tabpanel">
@@ -760,6 +778,304 @@ UI for configuring event settings.
               </div>
             </fieldset>
           </div>
+          <div class="tab-pane" id="multiconference" role="tabpanel">
+            <input type="hidden" name="multiConferenceForm" value="1">
+            <fieldset class="mb-4">
+              <legend>Multi-Conference Mode</legend>
+              <p>
+                Splits the teams into two conferences with their own rankings, alliance selection and playoff bracket,
+                optionally followed by an event championship. Works with a single field or with a hub and two fields.
+                Can't be changed once alliances exist.
+              </p>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label" for="multiConferenceEnabled">Enable multi-conference mode</label>
+                <div class="col-lg-1 checkbox">
+                  <input type="checkbox" id="multiConferenceEnabled" name="multiConferenceEnabled"
+                    {{if .MultiConferenceEnabled}}checked{{end}}>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label" for="preferMixedConferenceAlliances">
+                  Prefer qualification alliances that mix conferences
+                </label>
+                <div class="col-lg-1 checkbox">
+                  <input type="checkbox" id="preferMixedConferenceAlliances" name="preferMixedConferenceAlliances"
+                    {{if .PreferMixedConferenceAlliances}}checked{{end}}>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Alliance selection finalize</label>
+                <div class="col-lg-6">
+                  <select class="form-select" name="allianceFinalizeMode">
+                    <option value="0" {{if eq .AllianceFinalizeMode 0}}selected{{end}}>
+                      Per conference (recommended)
+                    </option>
+                    <option value="1" {{if eq .AllianceFinalizeMode 1}}selected{{end}}>Both conferences at once</option>
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+            {{range $conference := .Conferences}}
+            {{$prefix := printf "conf%d" $conference.Id}}
+            <fieldset class="mb-4">
+              <legend>
+                Conference {{$conference.Id}}
+                <span class="badge" style="background-color: {{$conference.Color}};">{{$conference.ShortName}}</span>
+              </legend>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Name / Short name</label>
+                <div class="col-lg-4">
+                  <input type="text" class="form-control" name="{{$prefix}}Name" value="{{$conference.Name}}">
+                </div>
+                <div class="col-lg-2">
+                  <input type="text" class="form-control" name="{{$prefix}}ShortName" maxlength="3"
+                    title="1-3 letters or digits, ending in a letter (e.g. NM)"
+                    value="{{$conference.ShortName}}">
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Color / Logo suffix</label>
+                <div class="col-lg-2">
+                  <input type="color" class="form-control form-control-color" name="{{$prefix}}Color"
+                    value="{{$conference.Color}}">
+                </div>
+                <div class="col-lg-4">
+                  <input type="text" class="form-control" name="{{$prefix}}LogoSuffix" placeholder="e.g. _north"
+                    value="{{$conference.LogoSuffix}}">
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Playoff format</label>
+                <div class="col-lg-6">
+                  <select class="form-select conference-playoff-type" name="{{$prefix}}PlayoffType"
+                    data-conference="{{$conference.Id}}" onchange="updateConferenceSeries(this);">
+                    <option value="0" {{if eq $conference.PlayoffType 0}}selected{{end}}>
+                      Double elimination (4 to 8 alliances)
+                    </option>
+                    <option value="1" {{if eq $conference.PlayoffType 1}}selected{{end}}>
+                      Single elimination / March Madness (2 to 16 alliances)
+                    </option>
+                  </select>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Number of alliances</label>
+                <div class="col-lg-6">
+                  <input type="number" class="form-control" name="{{$prefix}}NumAlliances" min="2" max="16"
+                    value="{{$conference.NumAlliances}}">
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">
+                  Series lengths (best of)<br>
+                  <small class="text-body-secondary" id="conf{{$conference.Id}}SeriesHelp"></small>
+                </label>
+                <div class="col-lg-6">
+                  <div class="row g-1">
+                    {{range $round := seriesRounds}}
+                    <div class="col-3 series-round-{{$conference.Id}}" data-round="{{$round}}">
+                      <label class="form-label small mb-0">{{if eq $round "F"}}Final{{else}}{{$round}}{{end}}</label>
+                      <select class="form-select form-select-sm" name="{{$prefix}}Series{{$round}}">
+                        {{range $length := seriesLengthOptions}}
+                        <option value="{{$length}}" {{if eq ($conference.SeriesLength $round) $length}}selected{{end}}>
+                          Bo{{$length}}
+                        </option>
+                        {{end}}
+                      </select>
+                    </div>
+                    {{end}}
+                  </div>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Playoff field</label>
+                <div class="col-lg-6">
+                  <select class="form-select" name="{{$prefix}}FieldId">
+                    <option value="1" {{if eq $conference.PlayoffFieldId 1}}selected{{end}}>Field 1</option>
+                    <option value="2" {{if eq $conference.PlayoffFieldId 2}}selected{{end}}>Field 2</option>
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+            {{end}}
+            <fieldset class="mb-4">
+              <legend>Event Championship</legend>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Championship format</label>
+                <div class="col-lg-6">
+                  <select class="form-select" name="championshipFormat">
+                    <option value="0" {{if eq .ChampionshipFormat 0}}selected{{end}}>
+                      Champions series (conference winners play off)
+                    </option>
+                    <option value="1" {{if eq .ChampionshipFormat 1}}selected{{end}}>
+                      Crossover semifinals (each champion plays the other conference's runner-up)
+                    </option>
+                    <option value="2" {{if eq .ChampionshipFormat 2}}selected{{end}}>
+                      Double-decker (4-alliance double elimination of both finals)
+                    </option>
+                    <option value="3" {{if eq .ChampionshipFormat 3}}selected{{end}}>None (two conference champions)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Championship series length</label>
+                <div class="col-lg-6">
+                  <select class="form-select" name="championshipSeriesLength">
+                    {{range $length := seriesLengthOptions}}
+                    <option value="{{$length}}"
+                      {{if eq $.EffectiveChampionshipSeriesLength $length}}selected{{end}}>Best of {{$length}}</option>
+                    {{end}}
+                  </select>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Championship field</label>
+                <div class="col-lg-6">
+                  <select class="form-select" name="championshipFieldMode">
+                    <option value="0" {{if eq .ChampionshipFieldMode 0}}selected{{end}}>Always Field 1</option>
+                    <option value="1" {{if eq .ChampionshipFieldMode 1}}selected{{end}}>Always Field 2</option>
+                    <option value="2" {{if eq .ChampionshipFieldMode 2}}selected{{end}}>
+                      Alternate (G1 Field 1, G2 Field 2, hub chooses later games)
+                    </option>
+                    <option value="3" {{if eq .ChampionshipFieldMode 3}}selected{{end}}>
+                      Choose each match from the hub
+                    </option>
+                  </select>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Showcase break before the championship (seconds)</label>
+                <div class="col-lg-6">
+                  <input type="number" class="form-control" name="championshipBreakSec" min="0"
+                    value="{{.ChampionshipBreakSec}}">
+                </div>
+              </div>
+            </fieldset>
+          </div>
+          <div class="tab-pane" id="multifield" role="tabpanel">
+            <input type="hidden" name="multiFieldForm" value="1">
+            <fieldset class="mb-4">
+              <legend>This Machine</legend>
+              <p class="small text-body-secondary">
+                <b>Standalone</b> is a normal single-field FMS. For two fields, one laptop is the <b>Hub</b> (runs the
+                event, no field hardware) and each field laptop is a <b>Node</b>. Changes take effect when you save.
+              </p>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Role</label>
+                <div class="col-lg-6">
+                  <select class="form-select" name="multiFieldRole" id="multiFieldRole" onchange="updateMultiFieldRole();">
+                    <option value="0" {{if eq .MultiFieldRole 0}}selected{{end}}>Standalone (single FMS)</option>
+                    <option value="1" {{if eq .MultiFieldRole 1}}selected{{end}}>Hub (runs the event, no field)</option>
+                    <option value="2" {{if eq .MultiFieldRole 2}}selected{{end}}>Node (runs one field)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row mb-3" data-roles="2">
+                <label class="col-lg-6 control-label">Field ID / Field name</label>
+                <div class="col-lg-2">
+                  <select class="form-select" name="fieldId">
+                    <option value="1" {{if ne .FieldId 2}}selected{{end}}>1</option>
+                    <option value="2" {{if eq .FieldId 2}}selected{{end}}>2</option>
+                  </select>
+                </div>
+                <div class="col-lg-4">
+                  <input type="text" class="form-control" name="fieldName" value="{{.FieldName}}"
+                    placeholder="Field {{if eq .FieldId 2}}2{{else}}1{{end}}">
+                </div>
+              </div>
+              <div class="row mb-3" data-roles="2">
+                <label class="col-lg-6 control-label">Hub address</label>
+                <div class="col-lg-6">
+                  <input type="text" class="form-control" name="hubAddress" placeholder="192.168.50.10"
+                    value="{{.HubAddress}}">
+                  <div class="form-text">
+                    The hub laptop's IP address; <code>:8080</code> is added if you leave out the port. The hub's
+                    Event Control page lists its addresses.
+                  </div>
+                </div>
+              </div>
+              <div class="row mb-3" data-roles="1 2">
+                <label class="col-lg-6 control-label">Shared secret</label>
+                <div class="col-lg-6">
+                  <div class="input-group">
+                    <input type="password" class="form-control" name="hubSharedSecret" id="hubSharedSecret"
+                      value="{{.HubSharedSecret}}" autocomplete="off">
+                    <button class="btn btn-outline-secondary" type="button" title="Show or hide"
+                      onclick="const input = $('#hubSharedSecret'); input.attr('type', input.attr('type') === 'password' ? 'text' : 'password');">
+                      <i class="bi bi-eye"></i>
+                    </button>
+                  </div>
+                  <div class="form-text">
+                    Must be exactly the same on the hub and on both field laptops. Leave it blank on the hub to have one
+                    made up for you; the hub's Event Control page shows it.
+                  </div>
+                </div>
+              </div>
+              {{if .RunningAsNode}}
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Connection to the hub</label>
+                <div class="col-lg-6">
+                  <div id="nodeLiveStatus" class="alert alert-secondary py-2 mb-2 small">Checking...</div>
+                  <div id="nodeRejected" class="small mb-2" style="display: none;"></div>
+                  <a class="btn btn-secondary btn-sm mb-1" href="/setup/node/export_bundle"
+                    title="Download every result from this field, to import on the hub by hand">Export results bundle</a>
+                  <button type="submit" class="btn btn-secondary btn-sm mb-1" formaction="/setup/node/resync"
+                    title="Fetch everything from the hub again and resend any rejected results">
+                    Resync from hub
+                  </button>
+                  <button type="submit" class="btn btn-danger btn-sm mb-1" formaction="/setup/node/promote"
+                    onclick="return confirm('Promote this node to a standalone FMS? It will stop talking to the hub. Only do this if the hub is gone for good.');">
+                    Promote node to standalone
+                  </button>
+                </div>
+              </div>
+              {{end}}
+              {{if .RunningAsHub}}
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Hub tools</label>
+                <div class="col-lg-6">
+                  <a class="btn btn-primary btn-sm" href="/event_control">Open Event Control</a>
+                  <div class="form-text">Connect and approve the fields there, and follow the event checklist.</div>
+                </div>
+              </div>
+              {{end}}
+            </fieldset>
+            <fieldset class="mb-4" data-roles="1">
+              <legend>Scheduling Across Fields (hub)</legend>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Qualification field assignment</label>
+                <div class="col-lg-6">
+                  <select class="form-select" name="qualFieldAssignmentMode">
+                    <option value="0" {{if eq .QualFieldAssignmentMode 0}}selected{{end}}>
+                      Alternate (odd matches Field 1, even Field 2)
+                    </option>
+                    <option value="1" {{if eq .QualFieldAssignmentMode 1}}selected{{end}}>
+                      Blocks (each schedule block picks a field)
+                    </option>
+                    <option value="2" {{if eq .QualFieldAssignmentMode 2}}selected{{end}}>
+                      Dynamic (next match goes to the first free field)
+                    </option>
+                  </select>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label">Minimum team turnaround (seconds)</label>
+                <div class="col-lg-6">
+                  <input type="number" class="form-control" name="minTurnaroundSec" min="0"
+                    value="{{.MinTurnaroundSec}}">
+                </div>
+              </div>
+              <div class="row mb-3">
+                <label class="col-lg-6 control-label" for="singlePlayoffFieldInterleave">
+                  Interleave both conferences' playoff matches when they share a field
+                </label>
+                <div class="col-lg-1 checkbox">
+                  <input type="checkbox" id="singlePlayoffFieldInterleave" name="singlePlayoffFieldInterleave"
+                    {{if .SinglePlayoffFieldInterleave}}checked{{end}}>
+                </div>
+              </div>
+            </fieldset>
+          </div>
           <div class="row justify-content-center">
             <div class="col-lg-3 align-items-center">
               <button type="submit" class="btn btn-primary">Save All Settings</button>
@@ -790,6 +1106,7 @@ UI for configuring event settings.
     </div>
   </div>
 </div>
+{{if not .RunningAsNode}}
 <div id="confirmClearDataPlayoff" class="modal" style="top: 20%;">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -851,11 +1168,82 @@ UI for configuring event settings.
   </div>
 </div>
 {{end}}
+{{end}}
 {{define "script"}}
 <script>
   updateNumPlayoffAlliances = function (isDoubleElimination) {
     const numPlayoffAlliances = $("input[name=numPlayoffAlliances]");
     numPlayoffAlliances.prop("disabled", false);
+  };
+
+  // Double elimination plays single matches until a best-of-N final, so only the final length applies to it.
+  updateConferenceSeries = function (select) {
+    const conferenceId = $(select).data("conference");
+    const isDoubleElimination = $(select).val() === "0";
+    $(`.series-round-${conferenceId}`).each(function () {
+      $(this).toggle(!isDoubleElimination || $(this).data("round") === "F");
+    });
+    $(`#conf${conferenceId}SeriesHelp`).text(
+      isDoubleElimination ? "Double elimination: every match is a single match except the final series." :
+        "Single elimination: choose the series length for each round."
+    );
+  };
+  $(function () {
+    $(".conference-playoff-type").each(function () {
+      updateConferenceSeries(this);
+    });
+    updateMultiFieldRole();
+    if ($("#nodeLiveStatus").length > 0) {
+      refreshNodeStatus();
+      setInterval(refreshNodeStatus, 2000);
+    }
+  });
+
+  // Shows only the multi-field settings that apply to the selected role.
+  updateMultiFieldRole = function () {
+    const role = $("#multiFieldRole").val();
+    $("#multifield [data-roles]").each(function () {
+      $(this).toggle(String($(this).data("roles")).split(" ").includes(role));
+    });
+  };
+
+  // Shows the live state of this node's connection to the hub.
+  refreshNodeStatus = function () {
+    $.getJSON("/setup/node/status", function (data) {
+      const status = data.Status;
+      let cssClass = "alert-danger";
+      if (status.Connected && status.Approved) {
+        cssClass = status.OutboxSize > 0 || status.RejectedCount > 0 ? "alert-warning" : "alert-success";
+      } else if (status.Connected) {
+        cssClass = "alert-warning";
+      }
+      const box = $("#nodeLiveStatus");
+      box.removeClass("alert-secondary alert-success alert-warning alert-danger").addClass(cssClass);
+      box.empty().append($("<div>").addClass("fw-semibold").text(data.Summary));
+      if (data.Queued.length > 0) {
+        box.append($("<div>").text(`Waiting to send: ${data.Queued.join(", ")}`));
+      }
+      if (status.LastError) {
+        box.append($("<div>").addClass("mt-1").text(status.LastError));
+      }
+      const rejected = $("#nodeRejected");
+      if (data.Rejected.length === 0) {
+        rejected.hide();
+        return;
+      }
+      const list = $("<ul>").addClass("mb-0");
+      data.Rejected.forEach(function (entry) {
+        list.append($("<li>").append($("<b>").text(entry.Match + ": ")).append(document.createTextNode(entry.Error)));
+      });
+      rejected.empty()
+        .append($("<div>").addClass("fw-semibold text-danger").text("Results the hub refused (kept on this laptop):"))
+        .append(list)
+        .append($("<div>").addClass("text-body-secondary")
+          .text("Fix the cause on the hub (e.g. move the match back to this field), then press Resync from hub."))
+        .show();
+    }).fail(function () {
+      $("#nodeLiveStatus").text("Couldn't get the status from this laptop's server.");
+    });
   };
 
   // Handle initial tab selection based on URL fragment.

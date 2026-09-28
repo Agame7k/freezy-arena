@@ -6,6 +6,7 @@ UI for configuring the awards.
 */}}
 {{define "title"}}Awards Configuration{{end}}
 {{define "body"}}
+{{template "hub_owned_notice" "/setup/awards"}}
 <div class="row justify-content-center">
   <div class="col-lg-8">
     <div class="card card-body bg-body-tertiary">
@@ -35,6 +36,21 @@ UI for configuring the awards.
                 </select>
               </div>
             </div>
+            {{if $.MultiConferenceEnabled}}
+            <div class="row mb-2">
+              <label class="col-sm-5 control-label">Conference</label>
+              <div class="col-sm-7">
+                <select class="form-control" name="conferenceId">
+                  <option value="0">Whole event</option>
+                  {{range $conference := $.Conferences}}
+                  <option value="{{$conference.Id}}" {{if eq $award.ConferenceId $conference.Id}}selected{{end}}>
+                    {{$conference.Name}}
+                  </option>
+                  {{end}}
+                </select>
+              </div>
+            </div>
+            {{end}}
             <div class="row mb-2">
               <label class="col-sm-5 control-label">Person Awarded</label>
               <div class="col-sm-7">
@@ -54,6 +70,10 @@ UI for configuring the awards.
       </form>
       {{end}}
       Winner and Finalist awards will be automatically generated once the playoff tournament is complete.
+      {{if .MultiConferenceEnabled}}
+      Conference Winner and Conference Finalist awards are generated when each conference bracket finishes, and Event
+      Champion awards when the championship finishes.
+      {{end}}
       {{if .EventSettings.TbaPublishingEnabled}}
       <br/><br/>
       <p>Awards are not automatically published to The Blue Alliance. Manually publish them from the Settings tab.</p>

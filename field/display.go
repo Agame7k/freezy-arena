@@ -38,6 +38,7 @@ const (
 	TwitchStreamDisplay
 	WallDisplay
 	WebpageDisplay
+	DualFieldDisplay
 )
 
 var DisplayTypeNames = map[DisplayType]string{
@@ -53,6 +54,7 @@ var DisplayTypeNames = map[DisplayType]string{
 	TwitchStreamDisplay:    "Twitch Stream",
 	WallDisplay:            "Wall",
 	WebpageDisplay:         "Web Page",
+	DualFieldDisplay:       "Dual Field (hub)",
 }
 
 var displayTypePaths = map[DisplayType]string{
@@ -68,6 +70,7 @@ var displayTypePaths = map[DisplayType]string{
 	TwitchStreamDisplay:    "/displays/twitch",
 	WallDisplay:            "/displays/wall",
 	WebpageDisplay:         "/displays/webpage",
+	DualFieldDisplay:       "/displays/dual_field",
 }
 
 var displayRegistryMutex sync.Mutex

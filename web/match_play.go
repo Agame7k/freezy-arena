@@ -17,7 +17,6 @@ import (
 	"log"
 	"net/http"
 	"sort"
-	"time"
 )
 
 type MatchPlayListItem struct {
@@ -98,12 +97,19 @@ func (web *Web) matchPlayMatchLoadHandler(w http.ResponseWriter, r *http.Request
 		handleWebErr(w, err)
 		return
 	}
+	settings := web.arena.EventSettings
 	data := struct {
 		MatchesByType    map[model.MatchType]MatchPlayList
 		CurrentMatchType model.MatchType
+		DynamicMode      bool
+		SimulateMode     bool
+		FieldName        string
 	}{
 		matchesByType,
 		currentMatchType,
+		settings.IsNode() && settings.QualFieldAssignmentMode == model.DynamicFieldAssignment,
+		web.arena.SimulateHardware && !settings.IsHub(),
+		settings.DisplayFieldName(),
 	}
 	err = template.ExecuteTemplate(w, "match_play_match_load.html", data)
 	if err != nil {
@@ -140,6 +146,7 @@ func (web *Web) matchPlayWebsocketHandler(w http.ResponseWriter, r *http.Request
 		web.arena.ScorePostedNotifier,
 		web.arena.ScoringStatusNotifier,
 		web.arena.MatchListNotifier,
+		web.arena.MultiFieldStatusNotifier,
 	)
 
 	// Loop, waiting for commands and responding to them, until the client closes the connection.
@@ -294,6 +301,27 @@ func (web *Web) matchPlayWebsocketHandler(w http.ResponseWriter, r *http.Request
 				writeWebsocketError(ws, err.Error())
 				continue
 			}
+		case "loadNextAvailable":
+			if err = web.arena.ResetMatch(); err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+			if err = web.arena.LoadNextAvailableMatch(); err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+			web.arena.MatchListNotifier.Notify()
+		case "simulateMatch":
+			matchType, _ := data.(string)
+			simulationType, err := simulationMatchType(matchType)
+			if err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
+			if _, err = web.simulateOneMatch(simulationType); err != nil {
+				writeWebsocketError(ws, err.Error())
+				continue
+			}
 		case "discardResults":
 			err = web.arena.ResetMatch()
 			if err != nil {
@@ -404,122 +432,51 @@ func (web *Web) commitPostAndLoadNextMatch() error {
 // Saves the given match and result to the database, supplanting any previous result for the match.
 func (web *Web) commitMatchScore(match *model.Match, matchResult *model.MatchResult, isMatchReviewEdit bool) error {
 	var updatedRankings game.Rankings
+	rankingsPending := false
 
-	if match.Type == model.Playoff {
-		// Adjust the score if necessary for a playoff DQ.
-		matchResult.CorrectPlayoffScore()
-	}
-
-	// Update the match record.
-	match.ScoreCommittedAt = time.Now()
-	redScoreSummary := matchResult.RedScoreSummary()
-	blueScoreSummary := matchResult.BlueScoreSummary()
-	match.Status, _ = game.DetermineMatchStatus(redScoreSummary, blueScoreSummary, match.UseTiebreakCriteria)
-
-	if match.Type != model.Test {
-		if matchResult.PlayNumber == 0 {
-			// Determine the play number for this new match result.
-			prevMatchResult, err := web.arena.Database.GetMatchResultForMatch(match.Id)
+	if web.arena.EventSettings.IsNode() && match.Type != model.Test {
+		// On a field node, save the result locally so that it can be shown right away, and send it to the hub, which
+		// is responsible for rankings, playoff progression and awards.
+		if isMatchReviewEdit && match.FieldId != web.arena.EventSettings.FieldId {
+			return fmt.Errorf("match %s is not played on this field; edit it on the hub instead", match.ShortName)
+		}
+		field.PrepareMatchResult(match, matchResult)
+		if isMatchReviewEdit {
+			// Edits are sent to the hub as a new play of the match.
+			previousResult, err := web.arena.Database.GetMatchResultForMatch(match.Id)
 			if err != nil {
 				return err
 			}
-			if prevMatchResult != nil {
-				matchResult.PlayNumber = prevMatchResult.PlayNumber + 1
-			} else {
-				matchResult.PlayNumber = 1
+			matchResult.Id = 0
+			matchResult.PlayNumber = 1
+			if previousResult != nil {
+				matchResult.PlayNumber = previousResult.PlayNumber + 1
 			}
-
-			// Save the match result record to the database.
-			err = web.arena.Database.CreateMatchResult(matchResult)
-			if err != nil {
-				return err
-			}
-		} else {
-			// We are updating a match result record that already exists.
-			err := web.arena.Database.UpdateMatchResult(matchResult)
-			if err != nil {
+		}
+		if err := web.arena.SaveMatchResult(match, matchResult); err != nil {
+			return err
+		}
+		if match.ShouldUpdateCards() {
+			if err := tournament.CalculateTeamCards(web.arena.Database, match.Type); err != nil {
 				return err
 			}
 		}
-
-		err := web.arena.Database.UpdateMatch(match)
+		if web.arena.NodeLink == nil {
+			return fmt.Errorf("this field node is not connected to a hub")
+		}
+		receipt, err := web.arena.NodeLink.SubmitResult(match, matchResult, isMatchReviewEdit)
 		if err != nil {
 			return err
 		}
-
-		if match.ShouldUpdateCards() {
-			// Regenerate the residual yellow cards that teams may carry.
-			if err = tournament.CalculateTeamCards(web.arena.Database, match.Type); err != nil {
-				return err
-			}
-		}
-
-		if match.ShouldUpdateRankings() {
-			// Recalculate all the rankings.
-			rankings, err := tournament.CalculateRankings(web.arena.Database, isMatchReviewEdit)
-			if err != nil {
-				return err
-			}
-			updatedRankings = rankings
-		}
-
-		if match.ShouldUpdatePlayoffMatches() {
-			if err = web.arena.Database.UpdateAllianceFromMatch(
-				match.PlayoffRedAlliance, [3]int{match.Red1, match.Red2, match.Red3},
-			); err != nil {
-				return err
-			}
-			if err = web.arena.Database.UpdateAllianceFromMatch(
-				match.PlayoffBlueAlliance, [3]int{match.Blue1, match.Blue2, match.Blue3},
-			); err != nil {
-				return err
-			}
-
-			// Populate any subsequent playoff matches.
-			if err = web.arena.UpdatePlayoffTournament(); err != nil {
-				return err
-			}
-
-			// Generate awards if the tournament is over.
-			if web.arena.PlayoffTournament.IsComplete() {
-				winnerAllianceId := web.arena.PlayoffTournament.WinningAllianceId()
-				finalistAllianceId := web.arena.PlayoffTournament.FinalistAllianceId()
-				if err = tournament.CreateOrUpdateWinnerAndFinalistAwards(
-					web.arena.Database, winnerAllianceId, finalistAllianceId,
-				); err != nil {
-					return err
-				}
-			}
-		}
-
-		if web.arena.EventSettings.TbaPublishingEnabled && match.Type != model.Practice {
-			// Publish asynchronously to The Blue Alliance.
-			go func() {
-				if err = web.arena.TbaClient.PublishMatches(web.arena.Database); err != nil {
-					log.Printf("Failed to publish matches: %s", err.Error())
-				}
-				if match.ShouldUpdateRankings() {
-					if err = web.arena.TbaClient.PublishRankings(web.arena.Database); err != nil {
-						log.Printf("Failed to publish rankings: %s", err.Error())
-					}
-				}
-			}()
-		}
-
-		if web.arena.EventSettings.NexusAutoQueueEnabled && !isMatchReviewEdit {
-			// Trigger Nexus AutoQueue asynchronously, ignoring errors.
-			go func() {
-				web.arena.NexusClient.AutoQueue(match.LongName, match.TypeOrder, match.Status)
-			}()
-		}
-
-		// Back up the database, but don't error out if it fails.
-		err = web.arena.Database.Backup(
-			web.arena.EventSettings.Name, fmt.Sprintf("post_%s_match_%s", match.Type, match.ShortName),
-		)
+		updatedRankings = receipt.Rankings
+		rankingsPending = receipt.Queued
+		web.arena.MultiFieldStatusNotifier.Notify()
+	} else {
+		rankings, err := web.arena.ApplyCommittedResult(match, matchResult, isMatchReviewEdit)
 		if err != nil {
-			log.Println(err)
+			return err
 		}
+		updatedRankings = rankings
 	}
 
 	if !isMatchReviewEdit {
@@ -527,6 +484,7 @@ func (web *Web) commitMatchScore(match *model.Match, matchResult *model.MatchRes
 		web.arena.SavedMatch = match
 		web.arena.SavedMatchResult = matchResult
 		web.arena.SavedRankings = updatedRankings
+		web.arena.SavedRankingsPending = rankingsPending
 		web.arena.ScorePostedNotifier.Notify()
 	}
 
@@ -571,6 +529,7 @@ func (web *Web) buildMatchPlayList(matchType model.MatchType) (MatchPlayList, er
 		return MatchPlayList{}, err
 	}
 
+	matches = web.arena.FilterMatchesForField(matches)
 	matchPlayList := make(MatchPlayList, len(matches))
 	for i, match := range matches {
 		matchPlayList[i].Id = match.Id

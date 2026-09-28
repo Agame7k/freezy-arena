@@ -57,6 +57,8 @@ type Match struct {
 	Status              game.MatchStatus
 	UseTiebreakCriteria bool
 	TbaMatchKey         TbaMatchKey
+	FieldId             int
+	ConferenceId        int
 }
 
 type TbaMatchKey struct {

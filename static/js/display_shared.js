@@ -70,7 +70,68 @@
       );
       $("#timeoutNextMatchName").text(timeoutNextMatchName);
       $("#timeoutBreakDescription").text(data.BreakDescription);
+      this.applyEventInfo(data.Event, currentMatch, redSide, blueSide);
       return currentMatch;
+    },
+
+    // Shows the field name and conference information (multi-field and multi-conference events).
+    applyEventInfo: function (event, match, redSide, blueSide) {
+      if (!event) {
+        return;
+      }
+      // Field name in a corner, so that viewers know which field the display belongs to.
+      let badge = $("#fieldNameBadge");
+      if (event.FieldName) {
+        if (badge.length === 0) {
+          badge = $('<div id="fieldNameBadge"></div>').css({
+            position: "fixed", top: "0.5em", right: "0.8em", zIndex: 1000, padding: "0.1em 0.6em",
+            background: "rgba(0, 0, 0, 0.7)", color: "#fff", fontSize: "1.6em", borderRadius: "0.3em",
+            textTransform: "uppercase", fontFamily: "FuturaLTBold, sans-serif",
+          });
+          $("body").append(badge);
+        }
+        badge.text(event.FieldName).show();
+      } else {
+        badge.hide();
+      }
+
+      // Playoff alliances are labeled by conference and seed (e.g. N3).
+      if (match.Type === matchTypePlayoff) {
+        if (event.RedAllianceLabel) {
+          $(`#${redSide}PlayoffAlliance`).text(event.RedAllianceLabel);
+        }
+        if (event.BlueAllianceLabel) {
+          $(`#${blueSide}PlayoffAlliance`).text(event.BlueAllianceLabel);
+        }
+      }
+
+      // A conference color bar under each team number.
+      const teams = {
+        [`${redSide}Team1`]: match.Red1, [`${redSide}Team2`]: match.Red2, [`${redSide}Team3`]: match.Red3,
+        [`${blueSide}Team1`]: match.Blue1, [`${blueSide}Team2`]: match.Blue2, [`${blueSide}Team3`]: match.Blue3,
+      };
+      $.each(teams, function (elementId, teamId) {
+        const conference = event.MultiConference && event.Conferences[event.TeamConferences[teamId]];
+        $(`#${elementId}`).css("box-shadow", conference ? `inset 0 -0.25em 0 ${conference.Color}` : "");
+      });
+    },
+
+    // Returns the text to show for a team's rank: the conference rank (e.g. "N4") in a multi-conference event, or
+    // the overall rank otherwise, along with the previous rank to compare against for the rank change arrow.
+    formatRank: function (event, teamId, ranking) {
+      if (!ranking || ranking.Rank === 0) {
+        return {text: "", rank: 0, previousRank: 0, overall: ""};
+      }
+      if (event && event.MultiConference && event.ConferenceRanks[teamId]) {
+        const conference = event.Conferences[event.TeamConferences[teamId]];
+        return {
+          text: (conference ? conference.ShortName : "") + event.ConferenceRanks[teamId],
+          rank: event.ConferenceRanks[teamId],
+          previousRank: event.PreviousConfRanks[teamId] || 0,
+          overall: "#" + ranking.Rank,
+        };
+      }
+      return {text: ranking.Rank, rank: ranking.Rank, previousRank: ranking.PreviousRank, overall: ""};
     },
 
     handleMatchTime: function (data) {

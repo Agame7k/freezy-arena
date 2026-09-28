@@ -13,17 +13,38 @@ Display for showing team rankings.
     <link rel="stylesheet" href="/static/css/lib/bootstrap.min.css"/>
     <link rel="stylesheet" href="/static/css/cheesy-arena.css"/>
     <link rel="stylesheet" href="/static/css/rankings_display.css"/>
+    <style>
+      #splitStandings { display: flex; gap: 1.5%; height: 85%; }
+      .split-column { flex: 1; display: flex; flex-direction: column; border-radius: 10px; background: #fff;
+        overflow: hidden; }
+      .split-title { color: #fff; font-family: "FuturaLTBold"; font-size: clamp(16px, 2.2vw, 34px); white-space: nowrap; text-transform: uppercase;
+        padding: 6px 14px; }
+      .split-header { width: 100%; text-align: center; font-weight: bold; font-size: 15px; color: #000;
+        border-bottom: 1px solid #000; table-layout: fixed; }
+      .split-body { flex: 1; overflow: hidden; }
+      .split-table { width: 100%; table-layout: fixed; text-align: center; font-size: 18px; color: #000; margin: 0; }
+      .split-table td, .split-header td { padding: 3px 0; }
+      .split-table .name, .split-header .name { width: 34%; text-align: left; overflow: hidden; white-space: nowrap; }
+      .split-table td, .split-header td { white-space: nowrap; overflow: hidden; }
+      .split-table td:nth-child(1), .split-header td:nth-child(1) { width: 9%; }
+      .split-table td:nth-child(2), .split-header td:nth-child(2) { width: 12%; }
+      .split-table td:nth-child(4), .split-header td:nth-child(4) { width: 8%; }
+      .split-table td:nth-child(5), .split-header td:nth-child(5) { width: 14%; }
+      .split-table td:nth-child(6), .split-header td:nth-child(6) { width: 11%; }
+      .split-table td:nth-child(7), .split-header td:nth-child(7) { width: 12%; }
+      .split-table { font-size: clamp(12px, 1.6vw, 22px); }
+    </style>
   </head>
   <body>
-    <div id="column">
+    <div id="column" data-multi-conference="{{.EventSettings.MultiConferenceEnabled}}">
       <div id="titlebar" class="row justify-content-between">
-        <div class="col-lg-4 text-start">Team Standings</div>
+        <div class="col-lg-4 text-start"><span id="conferenceName"></span>Team Standings</div>
         <div class="col-lg-4 text-end">{{.EventSettings.Name}}</div>
       </div>
       <div id="standings">
         <table id="header">
           <tr>
-            <td class="team-field">Rank</td>
+            <td class="team-field" id="rankHeader">{{if .EventSettings.MultiConferenceEnabled}}Conf Rank{{else}}Rank{{end}}</td>
             <td class="team-field">Team</td>
             <td class="team-nickname">Name</td>
             <td class="team-field">RP</td>
@@ -33,6 +54,7 @@ Display for showing team rankings.
             <td class="team-field">W-L-T</td>
             <td class="team-field">DQ</td>
             <td class="team-field">Played</td>
+            {{if .EventSettings.MultiConferenceEnabled}}<td class="team-field">Overall</td>{{end}}
           </tr>
         </table>
         <div id="container">
@@ -45,13 +67,17 @@ Display for showing team rankings.
           <span id="highestPlayedMatch"></span>
         </div>
       </div>
+      <div id="splitStandings" style="display: none;">
+        <div class="split-column" data-conference="1"></div>
+        <div class="split-column" data-conference="2"></div>
+      </div>
       <div id="earlyLateMessage"></div>
     </div>
     <script id="standingsTemplate" type="text/x-handlebars-template">
       <tbody>
         {{"{{#each Rankings}}"}}
         <tr>
-          <td class="team-field">{{"{{../Iteration}}"}} {{"{{this.Rank}}"}}</td>
+          <td class="team-field">{{"{{this.DisplayRank}}"}}</td>
           <td class="team-field">{{"{{this.TeamId}}"}}</td>
           <td class="team-nickname">{{"{{this.Nickname}}"}}</td>
           <td class="team-field">{{"{{this.RankingPoints}}"}}</td>
@@ -61,6 +87,7 @@ Display for showing team rankings.
           <td class="team-field">{{"{{this.Wins}}"}}-{{"{{this.Losses}}"}}-{{"{{this.Ties}}"}}</td>
           <td class="team-field">{{"{{this.Disqualifications}}"}}</td>
           <td class="team-field">{{"{{this.Played}}"}}</td>
+          {{if .EventSettings.MultiConferenceEnabled}}<td class="team-field">{{"{{this.Rank}}"}}</td>{{end}}
         </tr>
         {{"{{/each}}"}}
       </tbody>

@@ -13,11 +13,11 @@ func TestScheduleBlockCrud(t *testing.T) {
 	db := setupTestDb(t)
 	defer db.Close()
 
-	scheduleBlock1 := ScheduleBlock{0, Practice, time.Now().UTC(), 10, 600}
+	scheduleBlock1 := ScheduleBlock{0, Practice, time.Now().UTC(), 10, 600, 0}
 	assert.Nil(t, db.CreateScheduleBlock(&scheduleBlock1))
-	scheduleBlock2 := ScheduleBlock{0, Qualification, time.Now().UTC(), 20, 480}
+	scheduleBlock2 := ScheduleBlock{0, Qualification, time.Now().UTC(), 20, 480, 0}
 	assert.Nil(t, db.CreateScheduleBlock(&scheduleBlock2))
-	scheduleBlock3 := ScheduleBlock{0, Qualification, scheduleBlock2.StartTime.Add(time.Second * 20 * 480), 20, 480}
+	scheduleBlock3 := ScheduleBlock{0, Qualification, scheduleBlock2.StartTime.Add(time.Second * 20 * 480), 20, 480, 0}
 	assert.Nil(t, db.CreateScheduleBlock(&scheduleBlock3))
 
 	// Test retrieval of all blocks by match type.

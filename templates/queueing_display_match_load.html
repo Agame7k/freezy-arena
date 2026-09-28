@@ -7,7 +7,9 @@
           <div class="row">
             <div class="col-lg-4 ps-4">
               <h1 class="mt-2">
-                {{if eq $i 0}}
+                {{if $.Labels}}
+                {{index $.Labels $i}}
+                {{else if eq $i 0}}
                 On Field
                 {{else if eq $i 1}}
                 On Deck
@@ -22,6 +24,7 @@
             </div>
             <div class="col-lg-3">
               <h1 class="mt-2">{{$match.ShortName}}</h1>
+              {{if $.FieldLabels}}<h2 class="text-uppercase fw-bold">{{index $.FieldLabels $i}}</h2>{{end}}
             </div>
             <div class="col-lg-5">
               <h1 class="mt-2">{{$match.Time.Local.Format "3:04 PM"}}</h1>

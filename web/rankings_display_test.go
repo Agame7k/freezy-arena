@@ -13,7 +13,7 @@ import (
 func TestRankingsDisplay(t *testing.T) {
 	web := setupTestWeb(t)
 
-	recorder := web.getHttpResponse("/displays/rankings?displayId=1&scrollMsPerRow=700")
+	recorder := web.getHttpResponse("/displays/rankings?displayId=1&scrollMsPerRow=700&conference=split")
 	assert.Equal(t, 200, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "Standings Display - Untitled Event - Cheesy Arena")
 }

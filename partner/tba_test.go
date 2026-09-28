@@ -184,8 +184,8 @@ func TestCheckTbaPostResponseClosesBody(t *testing.T) {
 func TestPublishAwards(t *testing.T) {
 	database := setupTestDb(t)
 
-	database.CreateAward(&model.Award{0, model.JudgedAward, "Saftey Award", 254, ""})
-	database.CreateAward(&model.Award{0, model.JudgedAward, "Spirt Award", 0, "Bob Dorough"})
+	database.CreateAward(&model.Award{0, model.JudgedAward, "Saftey Award", 254, "", 0})
+	database.CreateAward(&model.Award{0, model.JudgedAward, "Spirt Award", 0, "Bob Dorough", 0})
 
 	// Mock the TBA server.
 	tbaServer := httptest.NewServer(

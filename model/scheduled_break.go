@@ -17,6 +17,7 @@ type ScheduledBreak struct {
 	Time            time.Time
 	DurationSec     int
 	Description     string
+	FieldId         int
 }
 
 func (database *Database) CreateScheduledBreak(scheduledBreak *ScheduledBreak) error {

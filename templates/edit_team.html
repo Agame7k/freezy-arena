@@ -72,6 +72,21 @@ UI for editing team data.
               <input type="checkbox" id="hasConnected" name="hasConnected" {{if .Team.HasConnected}} checked{{end}}/>
             </div>
           </div>
+          {{if .EventSettings.MultiConferenceEnabled}}
+          <div class="row mb-3">
+            <label class="col-lg-3 control-label">Conference</label>
+            <div class="col-lg-9">
+              <select class="form-select" name="conferenceId">
+                <option value="0" {{if eq .Team.ConferenceId 0}}selected{{end}}>None</option>
+                {{range $conference := .Conferences}}
+                <option value="{{$conference.Id}}" {{if eq $.Team.ConferenceId $conference.Id}}selected{{end}}>
+                  {{$conference.Name}}
+                </option>
+                {{end}}
+              </select>
+            </div>
+          </div>
+          {{end}}
           {{if .EventSettings.NetworkSecurityEnabled}}
           <div class="row mb-3">
             <label class="col-lg-3 control-label">WPA Key</label>

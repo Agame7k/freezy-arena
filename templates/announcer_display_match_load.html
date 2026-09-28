@@ -1,24 +1,27 @@
 {{define "announcer_display_match_load"}}
+{{if .Event.FieldName}}
+<div class="row mb-1"><h3 class="text-uppercase mb-0"><b>{{.Event.FieldName}}</b> &middot; {{.Match.LongName}}</h3></div>
+{{end}}
 <div class="row card card-body bg-red">
   {{if eq .Match.Type playoffMatch}}
-  <h4><b>Alliance {{.Match.PlayoffRedAlliance}}</b></h4>
+  <h4><b>Alliance {{if .Event.RedAllianceLabel}}{{.Event.RedAllianceLabel}}{{else}}{{.Match.PlayoffRedAlliance}}{{end}}</b></h4>
   {{end}}
-  {{template "team" dict "alliance" "red" "team" (index .Teams "R1") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "red" "team" (index .Teams "R2") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "red" "team" (index .Teams "R3") "rankings" .Rankings}}
+  {{template "team" dict "alliance" "red" "team" (index .Teams "R1") "rankings" .Rankings "event" .Event}}
+  {{template "team" dict "alliance" "red" "team" (index .Teams "R2") "rankings" .Rankings "event" .Event}}
+  {{template "team" dict "alliance" "red" "team" (index .Teams "R3") "rankings" .Rankings "event" .Event}}
   {{range $team := .RedOffFieldTeams}}
-  {{template "team" dict "alliance" "red" "team" $team "rankings" $.Rankings "isOffField" true}}
+  {{template "team" dict "alliance" "red" "team" $team "rankings" $.Rankings "event" $.Event "isOffField" true}}
   {{end}}
 </div>
 <div class="row card card-body bg-blue">
   {{if eq .Match.Type playoffMatch}}
-  <h4><b>Alliance {{.Match.PlayoffBlueAlliance}}</b></h4>
+  <h4><b>Alliance {{if .Event.BlueAllianceLabel}}{{.Event.BlueAllianceLabel}}{{else}}{{.Match.PlayoffBlueAlliance}}{{end}}</b></h4>
   {{end}}
-  {{template "team" dict "alliance" "blue" "team" (index .Teams "B1") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "blue" "team" (index .Teams "B2") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "blue" "team" (index .Teams "B3") "rankings" .Rankings}}
+  {{template "team" dict "alliance" "blue" "team" (index .Teams "B1") "rankings" .Rankings "event" .Event}}
+  {{template "team" dict "alliance" "blue" "team" (index .Teams "B2") "rankings" .Rankings "event" .Event}}
+  {{template "team" dict "alliance" "blue" "team" (index .Teams "B3") "rankings" .Rankings "event" .Event}}
   {{range $team := .BlueOffFieldTeams}}
-  {{template "team" dict "alliance" "blue" "team" $team "rankings" $.Rankings "isOffField" true}}
+  {{template "team" dict "alliance" "blue" "team" $team "rankings" $.Rankings "event" $.Event "isOffField" true}}
   {{end}}
 </div>
 {{end}}
@@ -35,7 +38,12 @@
   </div>
   <div class="col-sm-1">
     <div class="row">
-      <div class="col-sm-6">{{if index .rankings (itoa .team.Id)}}{{index .rankings (itoa .team.Id)}}{{end}}</div>
+      <div class="col-sm-6">
+        {{if and .event .event.MultiConference}}{{$conferenceId := index .event.TeamConferences .team.Id}}{{if $conferenceId}}
+        <b style="color: {{(index .event.Conferences $conferenceId).Color}};">{{(index .event.Conferences $conferenceId).ShortName}}{{index .event.ConferenceRanks .team.Id}}</b><br>
+        {{end}}{{end}}
+        {{if index .rankings (itoa .team.Id)}}{{index .rankings (itoa .team.Id)}}{{end}}
+      </div>
       <div class="col-sm-6">
         <button type="button" class="btn btn-secondary btn-sm" onclick="$('#team{{.team.Id}}Details').modal('show');">
           More

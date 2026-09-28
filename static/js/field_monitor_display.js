@@ -256,7 +256,9 @@ const handleRealtimeScore = function (data, reversed) {
 
 // Handles a websocket message to update current match
 const handleMatchLoad = function (data) {
-  $("#matchName").text(data.Match.LongName);
+  // Prefix the field name in a multi-field event so the two fields' monitors can't be confused.
+  const fieldName = data.Event && data.Event.FieldName;
+  $("#matchName").text((fieldName ? fieldName + " - " : "") + data.Match.LongName);
 };
 
 // Handles a websocket message to update the event status message.

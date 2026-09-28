@@ -10,3 +10,19 @@ type breakSpec struct {
 	durationSec int
 	description string
 }
+
+// A break placed into the schedule of a tournament, along with the field and schedule timeline it belongs to.
+type tournamentBreak struct {
+	breakSpec
+	fieldId  int
+	timeline int
+}
+
+// Wraps breaks from a single-bracket tournament, which are all on the default field and timeline.
+func newTournamentBreaks(breakSpecs []breakSpec) []tournamentBreak {
+	tournamentBreaks := make([]tournamentBreak, len(breakSpecs))
+	for i, spec := range breakSpecs {
+		tournamentBreaks[i] = tournamentBreak{breakSpec: spec}
+	}
+	return tournamentBreaks
+}

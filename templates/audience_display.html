@@ -250,9 +250,17 @@ Display shown on the audience screen overlayed over the video.
     </div>
     <script id="allianceSelectionTemplate" type="text/x-handlebars-template">
       <table id="allianceSelectionTable">
+        {{"{{#if conference}}"}}
+        <tr>
+          <td class="alliance-conference" colspan="{{"{{numColumns}}"}}"
+            style="background-color: {{"{{conference.Color}}"}}; color: #fff; text-transform: uppercase;">
+            {{"{{conference.Name}}"}} Conference
+          </td>
+        </tr>
+        {{"{{/if}}"}}
         {{"{{#each alliances}}"}}
         <tr>
-          <td class="alliance-cell">{{"{{Index}}"}}</td>
+          <td class="alliance-cell">{{"{{../prefix}}"}}{{"{{Index}}"}}</td>
           {{"{{#each this.TeamIds}}"}}
           <td class="selection-cell">{{"{{#if this}}"}}{{"{{this}}"}}{{"{{/if}}"}}</td>
           {{"{{/each}}"}}

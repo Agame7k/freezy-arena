@@ -16,6 +16,8 @@ type ScheduleBlock struct {
 	StartTime       time.Time
 	NumMatches      int
 	MatchSpacingSec int
+	// FieldId is the field that plays this block in the Blocks field assignment mode (0 means both fields alternate).
+	FieldId int
 }
 
 func (database *Database) CreateScheduleBlock(block *ScheduleBlock) error {

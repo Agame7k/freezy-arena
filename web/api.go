@@ -8,10 +8,12 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Team254/cheesy-arena/field"
 	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/model"
 	"github.com/Team254/cheesy-arena/partner"
 	"github.com/Team254/cheesy-arena/playoff"
+	"github.com/Team254/cheesy-arena/tournament"
 	"github.com/Team254/cheesy-arena/websocket"
 	"io"
 	"net/http"
@@ -32,7 +34,12 @@ type MatchWithResult struct {
 
 type RankingWithNickname struct {
 	game.Ranking
-	Nickname string
+	Nickname               string
+	ConferenceId           int
+	ConferenceRank         int
+	PreviousConferenceRank int
+	// DisplayRank is the conference rank when the rankings are filtered by conference, and the overall rank otherwise.
+	DisplayRank int
 }
 
 type allianceMatchup struct {
@@ -120,22 +127,16 @@ func (web *Web) sponsorSlidesApiHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// Generates a JSON dump of the qualification rankings, primarily for use by the rankings display.
+// Generates a JSON dump of the qualification rankings, primarily for use by the rankings display. The optional
+// conference parameter ("1", "2" or "all") filters the rankings to one conference.
 func (web *Web) rankingsApiHandler(w http.ResponseWriter, r *http.Request) {
 	rankings, err := web.arena.Database.GetAllRankings()
 	if err != nil {
 		handleWebErr(w, err)
 		return
 	}
-	var rankingsWithNicknames []RankingWithNickname
-	if rankings == nil {
-		// Go marshals an empty slice to null, so explicitly create it so that it appears as an empty JSON array.
-		rankingsWithNicknames = make([]RankingWithNickname, 0)
-	} else {
-		rankingsWithNicknames = make([]RankingWithNickname, len(rankings))
-	}
 
-	// Get team info so that nicknames can be displayed.
+	// Get team info so that nicknames and conferences can be displayed.
 	teams, err := web.arena.Database.GetAllTeams()
 	if err != nil {
 		handleWebErr(w, err)
@@ -145,8 +146,46 @@ func (web *Web) rankingsApiHandler(w http.ResponseWriter, r *http.Request) {
 	for _, team := range teams {
 		teamNicknames[team.Id] = team.Nickname
 	}
-	for i, ranking := range rankings {
-		rankingsWithNicknames[i] = RankingWithNickname{ranking, teamNicknames[ranking.TeamId]}
+
+	conferenceId := 0
+	var conference *field.ConferenceDisplay
+	if web.arena.EventSettings.MultiConferenceEnabled {
+		conferenceId, _ = strconv.Atoi(r.URL.Query().Get("conference"))
+		if conferenceId > 0 {
+			record, err := web.arena.Database.GetConferenceById(conferenceId)
+			if err != nil {
+				handleWebErr(w, err)
+				return
+			}
+			if record == nil {
+				http.Error(w, fmt.Sprintf("conference %d does not exist", conferenceId), http.StatusNotFound)
+				return
+			}
+			conference = &field.ConferenceDisplay{
+				Id: record.Id, Name: record.Name, ShortName: record.ShortName, Color: record.Color,
+				LogoSuffix: record.LogoSuffix,
+			}
+		}
+	}
+
+	// Go marshals an empty slice to null, so explicitly create it so that it appears as an empty JSON array.
+	rankingsWithNicknames := make([]RankingWithNickname, 0)
+	for _, ranking := range tournament.ConferenceRankings(rankings, teams, conferenceId) {
+		row := RankingWithNickname{
+			Ranking:                ranking.Ranking,
+			Nickname:               teamNicknames[ranking.TeamId],
+			ConferenceId:           ranking.ConferenceId,
+			ConferenceRank:         ranking.ConferenceRank,
+			PreviousConferenceRank: ranking.PreviousConferenceRank,
+			DisplayRank:            ranking.Rank,
+		}
+		if !web.arena.EventSettings.MultiConferenceEnabled {
+			row.ConferenceRank = 0
+			row.PreviousConferenceRank = 0
+		} else if conferenceId > 0 {
+			row.DisplayRank = ranking.ConferenceRank
+		}
+		rankingsWithNicknames = append(rankingsWithNicknames, row)
 	}
 
 	// Get the last match scored so we can report that on the display.
@@ -165,7 +204,14 @@ func (web *Web) rankingsApiHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Rankings           []RankingWithNickname
 		HighestPlayedMatch string
-	}{rankingsWithNicknames, highestPlayedMatch.ShortName}
+		MultiConference    bool
+		Conference         *field.ConferenceDisplay
+	}{
+		rankingsWithNicknames,
+		highestPlayedMatch.ShortName,
+		web.arena.EventSettings.MultiConferenceEnabled,
+		conference,
+	}
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		handleWebErr(w, err)
@@ -245,6 +291,15 @@ func (web *Web) bracketSvgApiHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("Content-Type", "image/svg+xml")
 	w.Header().Add("Access-Control-Allow-Origin", "*")
+	if web.arena.PlayoffTournament != nil && web.arena.PlayoffTournament.IsMultiConference() {
+		conferenceFilter := web.bracketConferenceFilter(
+			r.URL.Query().Get("conference"), r.URL.Query().Get("field"), activeMatch,
+		)
+		if err := web.generateMultiConferenceBracketSvg(w, activeMatch, conferenceFilter); err != nil {
+			handleWebErr(w, err)
+		}
+		return
+	}
 	if err := web.generateBracketSvg(w, activeMatch); err != nil {
 		handleWebErr(w, err)
 		return
@@ -252,9 +307,16 @@ func (web *Web) bracketSvgApiHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (web *Web) generateBracketSvg(w io.Writer, activeMatch *model.Match) error {
+	if web.arena.PlayoffTournament != nil && web.arena.PlayoffTournament.IsMultiConference() {
+		return web.generateMultiConferenceBracketSvg(w, activeMatch, 0)
+	}
 	alliances, err := web.arena.Database.GetAllAlliances()
 	if err != nil {
 		return err
+	}
+	alliancesById := make(map[int]*model.Alliance, len(alliances))
+	for i := range alliances {
+		alliancesById[alliances[i].Id] = &alliances[i]
 	}
 
 	matchups := make(map[string]*allianceMatchup)
@@ -271,15 +333,15 @@ func (web *Web) generateBracketSvg(w io.Writer, activeMatch *model.Match) error 
 				IsComplete:         matchup.IsComplete(),
 			}
 			if matchup.RedAllianceId > 0 {
-				if len(alliances) > 0 {
-					allianceMatchup.RedAlliance = &alliances[matchup.RedAllianceId-1]
+				if alliance, ok := alliancesById[matchup.RedAllianceId]; ok {
+					allianceMatchup.RedAlliance = alliance
 				} else {
 					allianceMatchup.RedAlliance = &model.Alliance{Id: matchup.RedAllianceId}
 				}
 			}
 			if matchup.BlueAllianceId > 0 {
-				if len(alliances) > 0 {
-					allianceMatchup.BlueAlliance = &alliances[matchup.BlueAllianceId-1]
+				if alliance, ok := alliancesById[matchup.BlueAllianceId]; ok {
+					allianceMatchup.BlueAlliance = alliance
 				} else {
 					allianceMatchup.BlueAlliance = &model.Alliance{Id: matchup.BlueAllianceId}
 				}
@@ -324,8 +386,8 @@ func (web *Web) allianceStatusApiHandler(w http.ResponseWriter, r *http.Request)
 	// Preload the JSON as a string
 	var allianceStations = web.arena.AllianceStations
 
-   	// Iterate through the slice of AllianceStation structs
-   	for i := range allianceStations {
+	// Iterate through the slice of AllianceStation structs
+	for i := range allianceStations {
 		// If the struct has a Team field, remove or clear it
 		allianceStations[i].Team = nil // Remove Team information
 	}

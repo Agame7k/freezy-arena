@@ -37,11 +37,18 @@ func (web *Web) awardsGetHandler(w http.ResponseWriter, r *http.Request) {
 	// Append a blank award to the end that can be used to add a new one.
 	awards = append(awards, model.Award{})
 
+	conferences, err := web.arena.Database.GetAllConferences()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+
 	data := struct {
 		*model.EventSettings
-		Awards []model.Award
-		Teams  []model.Team
-	}{web.arena.EventSettings, awards, teams}
+		Awards      []model.Award
+		Teams       []model.Team
+		Conferences []model.Conference
+	}{web.arena.EventSettings, awards, teams, conferences}
 	err = template.ExecuteTemplate(w, "base", data)
 	if err != nil {
 		handleWebErr(w, err)
@@ -63,12 +70,18 @@ func (web *Web) awardsPostHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		teamId, _ := strconv.Atoi(r.PostFormValue("teamId"))
+		conferenceId, _ := strconv.Atoi(r.PostFormValue("conferenceId"))
 		award := model.Award{
-			Id:         awardId,
-			Type:       model.JudgedAward,
-			AwardName:  r.PostFormValue("awardName"),
-			TeamId:     teamId,
-			PersonName: r.PostFormValue("personName"),
+			Id:           awardId,
+			Type:         model.JudgedAward,
+			AwardName:    r.PostFormValue("awardName"),
+			TeamId:       teamId,
+			PersonName:   r.PostFormValue("personName"),
+			ConferenceId: conferenceId,
+		}
+		if existing, err := web.arena.Database.GetAwardById(awardId); err == nil && existing != nil {
+			// Keep the type of generated awards (e.g. conference winners) when they are edited.
+			award.Type = existing.Type
 		}
 		if err := tournament.CreateOrUpdateAward(web.arena.Database, &award, true); err != nil {
 			handleWebErr(w, err)

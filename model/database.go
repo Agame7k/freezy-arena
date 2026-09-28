@@ -25,6 +25,7 @@ type Database struct {
 	bolt                *bbolt.DB
 	allianceTable       *table[Alliance]
 	awardTable          *table[Award]
+	conferenceTable     *table[Conference]
 	eventSettingsTable  *table[EventSettings]
 	judgingSlotTable    *table[JudgingSlot]
 	lowerThirdTable     *table[LowerThird]
@@ -36,6 +37,10 @@ type Database struct {
 	sponsorSlideTable   *table[SponsorSlide]
 	teamTable           *table[Team]
 	userSessionTable    *table[UserSession]
+
+	syncOutboxTable       *table[SyncOutboxEntry]
+	hubResultReceiptTable *table[HubResultReceipt]
+	nodeRegistrationTable *table[NodeRegistration]
 }
 
 // Opens the Bolt database at the given path, creating it if it doesn't exist.
@@ -52,6 +57,9 @@ func OpenDatabase(filename string) (*Database, error) {
 		return nil, err
 	}
 	if database.awardTable, err = newTable[Award](&database); err != nil {
+		return nil, err
+	}
+	if database.conferenceTable, err = newTable[Conference](&database); err != nil {
 		return nil, err
 	}
 	if database.eventSettingsTable, err = newTable[EventSettings](&database); err != nil {
@@ -85,6 +93,15 @@ func OpenDatabase(filename string) (*Database, error) {
 		return nil, err
 	}
 	if database.userSessionTable, err = newTable[UserSession](&database); err != nil {
+		return nil, err
+	}
+	if database.syncOutboxTable, err = newTable[SyncOutboxEntry](&database); err != nil {
+		return nil, err
+	}
+	if database.hubResultReceiptTable, err = newTable[HubResultReceipt](&database); err != nil {
+		return nil, err
+	}
+	if database.nodeRegistrationTable, err = newTable[NodeRegistration](&database); err != nil {
 		return nil, err
 	}
 

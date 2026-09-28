@@ -318,6 +318,7 @@ func TestMatchPlayWebsocketCommands(t *testing.T) {
 	readWebsocketType(t, ws, "realtimeScore")
 	readWebsocketType(t, ws, "scorePosted")
 	readWebsocketType(t, ws, "scoringStatus")
+	readWebsocketType(t, ws, "multiFieldStatus")
 
 	// Test that a server-side error is communicated to the client.
 	ws.Write("nonexistenttype", nil)
@@ -428,7 +429,7 @@ func TestMatchPlayWebsocketLoadMatch(t *testing.T) {
 	ws := websocket.NewTestWebsocket(conn)
 
 	// Should get a few status updates right after connection.
-	readWebsocketMultiple(t, ws, 10)
+	readWebsocketMultiple(t, ws, 11)
 
 	web.arena.Database.CreateTeam(&model.Team{Id: 101})
 	web.arena.Database.CreateTeam(&model.Team{Id: 102})
@@ -489,7 +490,7 @@ func TestMatchPlayWebsocketShowAndClearResult(t *testing.T) {
 	ws := websocket.NewTestWebsocket(conn)
 
 	// Should get a few status updates right after connection.
-	readWebsocketMultiple(t, ws, 10)
+	readWebsocketMultiple(t, ws, 11)
 
 	matchIdMessage := struct{ MatchId int }{1}
 	ws.Write("showResult", matchIdMessage)
@@ -526,7 +527,7 @@ func TestMatchPlayWebsocketNotifications(t *testing.T) {
 	ws := websocket.NewTestWebsocket(conn)
 
 	// Should get a few status updates right after connection.
-	readWebsocketMultiple(t, ws, 10)
+	readWebsocketMultiple(t, ws, 11)
 
 	web.arena.AudienceDisplayMode = "intro"
 	web.arena.AllianceStationDisplayMode = "blank"

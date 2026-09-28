@@ -35,7 +35,74 @@ func (web *Web) allianceSelectionGetHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if web.arena.EventSettings.MultiConferenceEnabled {
+		// Switch the active conference if requested, or default to the first one.
+		conferenceId, _ := strconv.Atoi(r.URL.Query().Get("conference"))
+		if conferenceId == 0 && web.arena.AllianceSelectionConferenceId == 0 {
+			conferenceId = 1
+		}
+		if conferenceId > 0 && conferenceId != web.arena.AllianceSelectionConferenceId {
+			conference, err := web.arena.Database.GetConferenceById(conferenceId)
+			if err != nil {
+				handleWebErr(w, err)
+				return
+			}
+			if conference != nil {
+				web.arena.SwitchAllianceSelectionConference(conferenceId)
+				web.arena.AllianceSelectionNotifier.Notify()
+			}
+		}
+	}
+
 	web.renderAllianceSelection(w, r, "")
+}
+
+// Returns the active conference of a multi-conference alliance selection, or nil in a single-conference event.
+func (web *Web) activeAllianceSelectionConference() (*model.Conference, error) {
+	if !web.arena.EventSettings.MultiConferenceEnabled {
+		return nil, nil
+	}
+	if web.arena.AllianceSelectionConferenceId == 0 {
+		web.arena.SwitchAllianceSelectionConference(1)
+	}
+	conference, err := web.arena.Database.GetConferenceById(web.arena.AllianceSelectionConferenceId)
+	if err != nil {
+		return nil, err
+	}
+	if conference == nil {
+		return nil, fmt.Errorf("conference %d does not exist", web.arena.AllianceSelectionConferenceId)
+	}
+	return conference, nil
+}
+
+// Returns the ID of the first alliance of the given conference; alliance IDs are consecutive across conferences.
+func (web *Web) conferenceAllianceOffset(conference *model.Conference) (int, error) {
+	conferences, err := web.arena.Database.GetAllConferences()
+	if err != nil {
+		return 0, err
+	}
+	offset := 0
+	for _, other := range conferences {
+		if other.Id < conference.Id {
+			offset += other.NumAlliances
+		}
+	}
+	return offset, nil
+}
+
+// Returns the saved alliances belonging to the given conference (or all alliances if conference is nil).
+func (web *Web) savedConferenceAlliances(conference *model.Conference) ([]model.Alliance, error) {
+	alliances, err := web.arena.Database.GetAllAlliances()
+	if err != nil || conference == nil {
+		return alliances, err
+	}
+	conferenceAlliances := []model.Alliance{}
+	for _, alliance := range alliances {
+		if alliance.ConferenceId == conference.Id {
+			conferenceAlliances = append(conferenceAlliances, alliance)
+		}
+	}
+	return conferenceAlliances, nil
 }
 
 // Updates the cache with the latest input from the client.
@@ -52,6 +119,16 @@ func (web *Web) allianceSelectionPostHandler(w http.ResponseWriter, r *http.Requ
 	// Reset picked state for each team in preparation for reconstructing it.
 	for i := range web.arena.AllianceSelectionRankedTeams {
 		web.arena.AllianceSelectionRankedTeams[i].Picked = false
+	}
+
+	teams, err := web.arena.Database.GetAllTeams()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+	teamConferences := make(map[int]int, len(teams))
+	for _, team := range teams {
+		teamConferences[team.Id] = team.ConferenceId
 	}
 
 	// Iterate through all selections and update the alliances.
@@ -80,6 +157,14 @@ func (web *Web) allianceSelectionPostHandler(w http.ResponseWriter, r *http.Requ
 						web.arena.AllianceSelectionAlliances[i].TeamIds[j] = teamId
 						break
 					}
+				}
+				if !found && web.arena.EventSettings.MultiConferenceEnabled &&
+					teamConferences[teamId] != web.arena.AllianceSelectionConferenceId {
+					// Server-side check that every pick belongs to the conference currently selecting.
+					web.renderAllianceSelection(
+						w, r, fmt.Sprintf("Team %d is not in the conference that is currently selecting.", teamId),
+					)
+					return
 				}
 				if !found {
 					web.renderAllianceSelection(
@@ -114,22 +199,75 @@ func (web *Web) allianceSelectionStartHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Create a blank alliance set matching the event configuration.
-	web.arena.AllianceSelectionAlliances = make([]model.Alliance, web.arena.EventSettings.NumPlayoffAlliances)
+	conference, err := web.activeAllianceSelectionConference()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+
+	// Create a blank alliance set matching the event (or conference) configuration.
+	numAlliances := web.arena.EventSettings.NumPlayoffAlliances
+	allianceOffset := 0
+	if conference != nil {
+		numAlliances = conference.NumAlliances
+		if allianceOffset, err = web.conferenceAllianceOffset(conference); err != nil {
+			handleWebErr(w, err)
+			return
+		}
+	}
+	web.arena.AllianceSelectionAlliances = make([]model.Alliance, numAlliances)
 	teamsPerAlliance := 3
 	if web.arena.EventSettings.SelectionRound3Order != "" {
 		teamsPerAlliance = 4
 	}
-	for i := 0; i < web.arena.EventSettings.NumPlayoffAlliances; i++ {
-		web.arena.AllianceSelectionAlliances[i].Id = i + 1
+	for i := 0; i < numAlliances; i++ {
+		web.arena.AllianceSelectionAlliances[i].Id = allianceOffset + i + 1
+		web.arena.AllianceSelectionAlliances[i].Seed = i + 1
 		web.arena.AllianceSelectionAlliances[i].TeamIds = make([]int, teamsPerAlliance)
+		if conference != nil {
+			web.arena.AllianceSelectionAlliances[i].ConferenceId = conference.Id
+		}
 	}
 
-	// Populate the ranked list of teams.
+	// Populate the ranked list of teams (only the active conference's teams, by conference rank).
 	rankings, err := web.arena.Database.GetAllRankings()
 	if err != nil {
 		handleWebErr(w, err)
 		return
+	}
+	if conference != nil {
+		teams, err := web.arena.Database.GetAllTeams()
+		if err != nil {
+			handleWebErr(w, err)
+			return
+		}
+		rankings = tournament.FilterRankingsByConference(rankings, teams, conference.Id)
+		if len(rankings) < numAlliances*teamsPerAlliance {
+			web.arena.AllianceSelectionAlliances = []model.Alliance{}
+			message := fmt.Sprintf(
+				"%s has only %d ranked teams, but %d alliances of %d need %d.", conference.Name, len(rankings),
+				numAlliances, teamsPerAlliance, numAlliances*teamsPerAlliance,
+			)
+			savedAlliances, err := web.arena.Database.GetAllAlliances()
+			if err != nil {
+				handleWebErr(w, err)
+				return
+			}
+			if len(savedAlliances) == 0 {
+				message += fmt.Sprintf(
+					" Lower %s's number of alliances to %d or fewer on Settings → Multi-Conference, then start again.",
+					conference.Name, len(rankings)/teamsPerAlliance,
+				)
+			} else {
+				message += fmt.Sprintf(
+					" The playoffs were already set up when the other conference finalized, so to change %s's size, "+
+						"first use Clear Playoff/Alliance Data on the Settings page (this also clears the other "+
+						"conference's alliances).", conference.Name,
+				)
+			}
+			web.renderAllianceSelection(w, r, message)
+			return
+		}
 	}
 	web.arena.AllianceSelectionRankedTeams = make([]model.AllianceSelectionRankedTeam, len(rankings))
 	for i, ranking := range rankings {
@@ -168,9 +306,13 @@ func (web *Web) allianceSelectionResetHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	web.arena.AllianceSelectionAlliances = []model.Alliance{}
-	web.arena.AllianceSelectionRankedTeams = []model.AllianceSelectionRankedTeam{}
+	web.arena.ResetAllianceSelectionStates()
+	if err = web.clearConferencePlayoffStartTimes(); err != nil {
+		handleWebErr(w, err)
+		return
+	}
 	web.arena.AllianceSelectionNotifier.Notify()
+	web.arena.NotifyDataChanged()
 	http.Redirect(w, r, "/alliance_selection", 303)
 }
 
@@ -189,6 +331,11 @@ func (web *Web) allianceSelectionFinalizeHandler(w http.ResponseWriter, r *http.
 	startTime, err := time.ParseInLocation("2006-01-02 03:04:05 PM", r.PostFormValue("startTime"), location)
 	if err != nil {
 		web.renderAllianceSelection(w, r, "Must specify a valid start time for the playoff rounds.")
+		return
+	}
+
+	if web.arena.EventSettings.MultiConferenceEnabled {
+		web.finalizeConferenceAllianceSelection(w, r, startTime)
 		return
 	}
 
@@ -366,15 +513,30 @@ func (web *Web) allianceSelectionWebsocketHandler(w http.ResponseWriter, r *http
 }
 
 func (web *Web) renderAllianceSelection(w http.ResponseWriter, r *http.Request, errorMessage string) {
+	if web.arena.EventSettings.IsNode() {
+		errorMessage = "Alliance selection is run on the hub; this field node only mirrors its results."
+	}
+	conference, err := web.activeAllianceSelectionConference()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
 	if len(web.arena.AllianceSelectionAlliances) == 0 {
 		// The application may have been restarted since the alliance selection was conducted; try reloading the
 		// alliances from the DB.
-		var err error
-		web.arena.AllianceSelectionAlliances, err = web.arena.Database.GetAllAlliances()
+		web.arena.AllianceSelectionAlliances, err = web.savedConferenceAlliances(conference)
 		if err != nil {
 			handleWebErr(w, err)
 			return
 		}
+	}
+	conferences, err := web.arena.Database.GetAllConferences()
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
+	if !web.arena.EventSettings.MultiConferenceEnabled {
+		conferences = nil
 	}
 
 	template, err := web.parseFiles(
@@ -393,6 +555,8 @@ func (web *Web) renderAllianceSelection(w http.ResponseWriter, r *http.Request, 
 		NextCol      int
 		ErrorMessage string
 		TimeLimitSec int
+		Conference   *model.Conference
+		Conferences  []model.Conference
 	}{
 		web.arena.EventSettings,
 		web.arena.AllianceSelectionAlliances,
@@ -401,6 +565,8 @@ func (web *Web) renderAllianceSelection(w http.ResponseWriter, r *http.Request, 
 		nextCol,
 		errorMessage,
 		allianceSelectionTimeLimitSec,
+		conference,
+		conferences,
 	}
 	err = template.ExecuteTemplate(w, "base", data)
 	if err != nil {
@@ -409,8 +575,21 @@ func (web *Web) renderAllianceSelection(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
-// Returns true if it is safe to change the alliance selection (i.e. no playoff matches exist yet).
+// Returns true if it is safe to change the alliance selection (i.e. no playoff matches exist yet, or in a
+// multi-conference event, the active conference has not been finalized yet).
 func (web *Web) canModifyAllianceSelection() bool {
+	if web.arena.EventSettings.IsNode() {
+		// Nodes only mirror the alliances chosen on the hub.
+		return false
+	}
+	if web.arena.EventSettings.MultiConferenceEnabled {
+		conference, err := web.activeAllianceSelectionConference()
+		if err != nil {
+			return false
+		}
+		saved, err := web.savedConferenceAlliances(conference)
+		return err == nil && len(saved) == 0
+	}
 	matches, err := web.arena.Database.GetMatchesByType(model.Playoff, true)
 	if err != nil || len(matches) > 0 {
 		return false
@@ -420,6 +599,9 @@ func (web *Web) canModifyAllianceSelection() bool {
 
 // Returns true if it is safe to reset the alliance selection (i.e. no playoff matches have been played yet).
 func (web *Web) canResetAllianceSelection() bool {
+	if web.arena.EventSettings.IsNode() {
+		return false
+	}
 	matches, err := web.arena.Database.GetMatchesByType(model.Playoff, true)
 	if err != nil {
 		return false
@@ -474,4 +656,21 @@ func (web *Web) determineNextCell() (int, int) {
 		}
 	}
 	return -1, -1
+}
+
+// Clears the playoff start time of every conference, e.g. when the playoffs are reset.
+func (web *Web) clearConferencePlayoffStartTimes() error {
+	conferences, err := web.arena.Database.GetAllConferences()
+	if err != nil {
+		return err
+	}
+	for _, conference := range conferences {
+		if !conference.PlayoffStartTime.IsZero() {
+			conference.PlayoffStartTime = time.Time{}
+			if err = web.arena.Database.UpdateConference(&conference); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

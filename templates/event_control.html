@@ -1,0 +1,255 @@
+{{/*
+Copyright 2026 Team 254. All Rights Reserved.
+
+Hub dashboard for a multi-field event: both fields side by side, node status and hub tools.
+*/}}
+{{define "title"}}Event Control{{end}}
+{{define "body"}}
+{{if .Message}}
+<div class="alert alert-info alert-dismissible">
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  {{.Message}}
+  {{if .ImportSummary}}
+  <ul class="mb-0 mt-2">
+    {{range $line := .ImportSummary}}<li>{{$line}}</li>{{end}}
+  </ul>
+  {{end}}
+</div>
+{{end}}
+{{if not .IsHub}}
+<div class="alert alert-warning d-flex align-items-center gap-3">
+  <div class="flex-grow-1">
+    Event Control is for the hub of a multi-field event, and this machine isn't the hub. To make it the hub, set its
+    <b>Role</b> to <b>Hub</b> on the Multi-Field settings tab and save; no restart is needed.
+  </div>
+  <a class="btn btn-primary text-nowrap" href="/setup/settings#multifield">Multi-Field settings</a>
+</div>
+{{else}}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card card-body bg-body-tertiary mb-3">
+      <legend class="mb-1">Event Checklist</legend>
+      <p class="small text-body-secondary mb-2">What's done, and what to do next. Updates on its own.</p>
+      <div id="checklist">{{template "checklist" .}}</div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card card-body bg-body-tertiary mb-3">
+      <legend class="mb-1">How to connect a field</legend>
+      <ol class="small mb-2 ps-3">
+        <li>On the field laptop, start Cheesy Arena and open <b>Settings → Multi-Field</b>.</li>
+        <li>Set <b>Role</b> to <b>Node</b> and <b>Field ID</b> to 1 or 2.</li>
+        <li>
+          Set <b>Hub address</b> to this hub's address (the one on the same network as the field):
+          <ul class="list-unstyled mt-1 mb-1">
+            {{range $address := .HubAddresses}}
+            <li>
+              <code class="copyable">{{$address.Address}}</code>
+              <span class="text-body-secondary">({{$address.Label}})</span>
+              <button type="button" class="btn btn-link btn-sm p-0 ms-1 copy-button" data-copy="{{$address.Address}}"
+                title="Copy">copy</button>
+            </li>
+            {{end}}
+          </ul>
+        </li>
+        <li>
+          Enter this hub's <b>shared secret</b>
+          {{if .HubSharedSecret}}
+          (<code class="secret" data-secret="{{.HubSharedSecret}}">••••••••</code>
+          <button type="button" class="btn btn-link btn-sm p-0 reveal-secret">show</button> &middot;
+          <button type="button" class="btn btn-link btn-sm p-0 copy-button" data-copy="{{.HubSharedSecret}}">copy</button>)
+          {{end}}
+          and save, then approve the field in the checklist.
+        </li>
+      </ol>
+      <div class="small text-body-secondary">Or start the field laptop from a terminal with:</div>
+      <code class="small d-block text-break">cheesy-arena.exe -role node -field-id 1 -hub {{(index .HubAddresses 0).Address}} -secret {{if .HubSharedSecret}}<span class="secret" data-secret="{{.HubSharedSecret}}">••••••••</span>{{else}}&lt;your secret&gt;{{end}}</code>
+    </div>
+  </div>
+</div>
+<div class="row" id="fields">
+  <div class="col text-body-secondary">Waiting for field status...</div>
+</div>
+<div class="row mt-3">
+  <div class="col-lg-7">
+    <div class="card card-body bg-body-tertiary mb-3">
+      <legend>Nodes</legend>
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Status</th>
+            <th>Clock offset</th>
+            <th>Outbox</th>
+            <th>Last contact</th>
+            <th>Mirror</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="nodes">
+          {{range $registration := .Registrations}}
+          <tr>
+            <td>{{$registration.Id}}</td>
+            <td colspan="6">{{$registration.FieldName}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <div class="card card-body bg-body-tertiary mb-3">
+      <legend>Conflicts</legend>
+      <p class="small text-body-secondary mb-1">
+        When a node and the hub disagree, the hub's data wins and the disagreement is logged here.
+      </p>
+      <ul id="conflicts" class="small mb-0"></ul>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card card-body bg-body-tertiary mb-3">
+      <legend>Move a Match to a Field</legend>
+      <p class="small text-body-secondary">
+        Pick the field for a championship match whose field is chosen at load time, or move an unplayed match (e.g.
+        while the other field is down). A field that has the match loaded moves on to its next match.
+      </p>
+      {{if .AssignableMatches}}
+      <form action="/event_control/assign_field" method="POST" class="row g-2">
+        <div class="col-7">
+          <select class="form-select" name="matchId" aria-label="Match">
+            {{range $group := .AssignableMatches}}
+            <optgroup label="{{$group.Label}}">
+              {{range $match := $group.Matches}}
+              <option value="{{$match.Id}}">{{$match.LongName}}</option>
+              {{end}}
+            </optgroup>
+            {{end}}
+          </select>
+        </div>
+        <div class="col-3">
+          <select class="form-select" name="fieldId" aria-label="Field">
+            <option value="1">Field 1</option>
+            <option value="2">Field 2</option>
+            <option value="0">No field</option>
+          </select>
+        </div>
+        <div class="col-2">
+          <button type="submit" class="btn btn-primary">Move</button>
+        </div>
+      </form>
+      {{else}}
+      <div class="text-body-secondary small">No unplayed matches.</div>
+      {{end}}
+    </div>
+    <div class="card card-body bg-body-tertiary mb-3">
+      <legend>Displays</legend>
+      <div class="mb-2">
+        <a class="btn btn-primary btn-sm mb-1" target="_blank" href="/displays/dual_field">Open Dual Field display</a>
+        <a class="btn btn-primary btn-sm mb-1" target="_blank" href="/displays/rankings?conference=split">
+          Open side-by-side standings
+        </a>
+        <a class="btn btn-primary btn-sm mb-1" target="_blank" href="/displays/bracket?conference=all">
+          Open full bracket
+        </a>
+      </div>
+      <form action="/event_control/audience_display" method="POST" class="d-flex flex-wrap gap-1">
+        <span class="me-1 align-self-center">Show on audience displays:</span>
+        <button type="submit" name="mode" value="dualField" class="btn btn-success btn-sm">Dual Field</button>
+        <button type="submit" name="mode" value="standings" class="btn btn-success btn-sm">Standings</button>
+        <button type="submit" name="mode" value="bracket" class="btn btn-success btn-sm">Bracket</button>
+        <button type="submit" name="mode" value="blank" class="btn btn-secondary btn-sm">Blank</button>
+      </form>
+    </div>
+    <div class="card card-body bg-body-tertiary mb-3">
+      <legend>Sync Tools</legend>
+      <form action="/event_control/resync" method="POST" class="mb-3">
+        <button type="submit" class="btn btn-secondary">Force resync of all nodes</button>
+      </form>
+      <form action="/event_control/import_bundle" method="POST" enctype="multipart/form-data">
+        <label class="form-label">Import results bundle (exported from a node)</label>
+        <div class="input-group">
+          <input type="file" class="form-control" name="bundleFile" accept=".json">
+          <button type="submit" class="btn btn-warning">Import</button>
+        </div>
+        <div class="form-text">
+          Merges the results into the hub; results that were already applied are skipped.
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{{end}}
+{{end}}
+{{define "checklist"}}
+{{if .Simulate}}
+<div class="border border-warning rounded p-2 mb-2 small">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <div class="flex-grow-1">
+      <i class="bi bi-dice-5 me-1"></i><b>Test mode:</b> play the whole event automatically with random scores (creates
+      36 test teams if the event is empty).
+    </div>
+    {{if .SimulationRunning}}
+    <form method="POST" action="/event_control/simulate_all">
+      <button type="submit" name="stop" value="1" class="btn btn-danger btn-sm">Stop simulating</button>
+    </form>
+    {{else}}
+    <form method="POST" action="/event_control/simulate_all" class="d-flex gap-1 align-items-center">
+      <select class="form-select form-select-sm w-auto" name="intervalSec" title="Time between simulated matches">
+        <option value="1" selected>1 s per match</option>
+        <option value="3">3 s per match</option>
+        <option value="10">10 s per match</option>
+      </select>
+      <button type="submit" class="btn btn-warning btn-sm text-nowrap">Simulate the whole event</button>
+    </form>
+    {{end}}
+  </div>
+  {{if .Simulation}}<div class="mt-1 fw-semibold">{{.Simulation}}</div>{{end}}
+</div>
+{{end}}
+<ul class="list-unstyled mb-0">
+  {{range $step := .Steps}}
+  <li class="d-flex align-items-start py-1 {{if $step.Current}}fw-semibold{{end}}">
+    <span class="me-2 fs-5 lh-1">
+      {{if eq $step.State "done"}}<i class="bi bi-check-circle-fill text-success" title="Done"></i>
+      {{else if eq $step.State "problem"}}<i class="bi bi-exclamation-circle-fill text-warning" title="Needs attention"></i>
+      {{else}}<i class="bi bi-circle text-body-secondary" title="To do"></i>{{end}}
+    </span>
+    <div class="flex-grow-1">
+      <div>
+        {{$step.Title}}
+        {{if $step.Current}}<span class="badge text-bg-primary ms-1">next</span>{{end}}
+        {{if $step.Link}}<a class="ms-2 small fw-normal" href="{{$step.Link}}">{{$step.LinkText}} &rarr;</a>{{end}}
+      </div>
+      {{if $step.Detail}}<div class="small text-body-secondary fw-normal">{{$step.Detail}}</div>{{end}}
+      {{if eq $step.Action "approve"}}
+      <form class="mt-1" method="POST" action="/event_control/nodes/{{$step.FieldId}}/approve">
+        <button type="submit" class="btn btn-success btn-sm">Approve Field {{$step.FieldId}}</button>
+      </form>
+      {{else if and (eq $step.Action "secret") (ne $step.State "done")}}
+      <form class="mt-1 d-flex gap-1" method="POST" action="/event_control/secret">
+        <input type="text" class="form-control form-control-sm" name="hubSharedSecret" minlength="4" required
+          placeholder="e.g. mnrobotics2026" autocomplete="off">
+        <button type="submit" class="btn btn-primary btn-sm text-nowrap">Save secret</button>
+      </form>
+      {{else if eq $step.Action "secret"}}
+      <div class="small fw-normal mt-1">
+        Secret: <code class="secret" data-secret="{{$.HubSharedSecret}}">••••••••</code>
+        <button type="button" class="btn btn-link btn-sm p-0 ms-1 reveal-secret">show</button> &middot;
+        <button type="button" class="btn btn-link btn-sm p-0 copy-button" data-copy="{{$.HubSharedSecret}}">copy</button>
+      </div>
+      <details class="small fw-normal mt-1">
+        <summary>Change the secret</summary>
+        <form class="mt-1 d-flex gap-1" method="POST" action="/event_control/secret"
+          onsubmit="return confirm('Connected fields will be disconnected until they are given the new secret. Continue?');">
+          <input type="text" class="form-control form-control-sm" name="hubSharedSecret" minlength="4" required
+            autocomplete="off">
+          <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap">Save secret</button>
+        </form>
+      </details>
+      {{end}}
+    </div>
+  </li>
+  {{end}}
+</ul>
+{{end}}
+{{define "script"}}
+<script src="/static/js/event_control.js"></script>
+{{end}}

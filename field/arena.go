@@ -111,6 +111,18 @@ type Arena struct {
 	lastPlcNotifyTime                 time.Time
 	lastRedLedMode                    led.Mode
 	lastBlueLedMode                   led.Mode
+
+	// Multi-conference and multi-field state.
+	AllianceSelectionConferenceId int
+	allianceSelectionStates       map[int]allianceSelectionState
+	// Set on a field node to communicate with the hub.
+	NodeLink NodeLink
+	// Called whenever event data is changed by a committed result (used by the hub to push updates to nodes).
+	OnDataChanged func()
+	// When true, no field hardware is used and matches can be started without robots (for development and testing).
+	SimulateHardware bool
+	// Set on a node when the score was posted before the hub returned updated rankings.
+	SavedRankingsPending bool
 }
 
 type AllianceStation struct {
@@ -128,7 +140,13 @@ type AllianceStation struct {
 
 // Creates the arena and sets it to its initial state.
 func NewArena(dbPath string) (*Arena, error) {
+	return NewArenaWithOptions(dbPath, false)
+}
+
+// Creates the arena, optionally simulating all field hardware, and sets it to its initial state.
+func NewArenaWithOptions(dbPath string, simulateHardware bool) (*Arena, error) {
 	arena := new(Arena)
+	arena.SimulateHardware = simulateHardware
 	arena.configureNotifiers()
 	arena.Plc = new(plc.ModbusPlc)
 	arena.Esp32 = new(plc.Esp32IO)
@@ -222,13 +240,24 @@ func (arena *Arena) LoadSettings() error {
 		sccUpCommands,
 		sccDownCommands,
 	)
-	arena.Plc.SetAddress(settings.PlcAddress)
-	if err = arena.Leds.SetAddress(settings.LedControllerAddress); err != nil {
-		return err
+	if arena.UsesFieldHardware() {
+		arena.Plc.SetAddress(settings.PlcAddress)
+		if err = arena.Leds.SetAddress(settings.LedControllerAddress); err != nil {
+			return err
+		}
+		arena.Esp32.SetScoreTableAddress(settings.ScoreTableEstopAddress)
+		arena.Esp32.SetRedAllianceStationEstopAddress(settings.RedAllianceStationEstopAddress)
+		arena.Esp32.SetBlueAllianceStationEstopAddress(settings.BlueAllianceStationEstopAddress)
+	} else {
+		// A hub has no field, and a simulated field has no hardware to talk to.
+		arena.Plc.SetAddress("")
+		if err = arena.Leds.SetAddress(""); err != nil {
+			return err
+		}
+		arena.Esp32.SetScoreTableAddress("")
+		arena.Esp32.SetRedAllianceStationEstopAddress("")
+		arena.Esp32.SetBlueAllianceStationEstopAddress("")
 	}
-	arena.Esp32.SetScoreTableAddress(settings.ScoreTableEstopAddress)
-	arena.Esp32.SetRedAllianceStationEstopAddress(settings.RedAllianceStationEstopAddress)
-	arena.Esp32.SetBlueAllianceStationEstopAddress(settings.BlueAllianceStationEstopAddress)
 	arena.TbaClient = partner.NewTbaClient(settings.TbaEventCode, settings.TbaSecretId, settings.TbaSecret)
 	arena.NexusClient = partner.NewNexusClient(settings.TbaEventCode, settings.NexusAutoQueueKey)
 	arena.BlackmagicClient = partner.NewBlackmagicClient(settings.BlackmagicAddresses)
@@ -310,9 +339,20 @@ func (arena *Arena) LoadSettings() error {
 	return nil
 }
 
-// Constructs an empty playoff tournament in memory, based only on the number of alliances.
+// Constructs an empty playoff tournament in memory, based only on the number of alliances (or, in a multi-conference
+// event, on the conference configuration).
 func (arena *Arena) CreatePlayoffTournament() error {
 	var err error
+	if arena.EventSettings.MultiConferenceEnabled {
+		conferences, err := arena.Database.EnsureConferences()
+		if err != nil {
+			return err
+		}
+		arena.PlayoffTournament, err = playoff.NewMultiConferencePlayoffTournament(
+			conferences, playoff.MultiConferenceOptionsFromSettings(arena.EventSettings),
+		)
+		return err
+	}
 	arena.PlayoffTournament, err = playoff.NewPlayoffTournament(
 		arena.EventSettings.PlayoffType, arena.EventSettings.NumPlayoffAlliances,
 	)
@@ -321,7 +361,35 @@ func (arena *Arena) CreatePlayoffTournament() error {
 
 // Performs the one-time creation of all matches for the playoff tournament.
 func (arena *Arena) CreatePlayoffMatches(startTime time.Time) error {
+	if arena.PlayoffTournament.IsMultiConference() {
+		return arena.PlayoffTournament.CreateMatchesAndBreaksWithStartTimes(
+			arena.Database, startTime, arena.conferenceStartTimes(),
+		)
+	}
 	return arena.PlayoffTournament.CreateMatchesAndBreaks(arena.Database, startTime)
+}
+
+// Recomputes the times of the playoff matches, e.g. after a conference sets its own start time.
+func (arena *Arena) ReschedulePlayoffMatches(defaultStartTime time.Time) error {
+	return arena.PlayoffTournament.RescheduleMatchesAndBreaks(
+		arena.Database, defaultStartTime, arena.conferenceStartTimes(),
+	)
+}
+
+// Returns the playoff start time of each conference that has one, keyed by conference ID.
+func (arena *Arena) conferenceStartTimes() map[int]time.Time {
+	startTimes := make(map[int]time.Time)
+	conferences, err := arena.Database.GetAllConferences()
+	if err != nil {
+		log.Printf("Failed to load conferences: %v", err)
+		return startTimes
+	}
+	for _, conference := range conferences {
+		if !conference.PlayoffStartTime.IsZero() {
+			startTimes[conference.Id] = conference.PlayoffStartTime
+		}
+	}
+	return startTimes
 }
 
 // Traverses the playoff tournament rounds to assess winners and populate subsequent matches.
@@ -341,6 +409,13 @@ func (arena *Arena) LoadMatch(match *model.Match) error {
 	if arena.MatchState != PreMatch && arena.MatchState != TimeoutActive {
 		return fmt.Errorf("cannot load match while there is a match still in progress or with results pending")
 	}
+	if match.Type != model.Test && !arena.matchIsOnThisField(match) {
+		return fmt.Errorf("match %s is not assigned to this field", match.ShortName)
+	}
+	if err := arena.checkTeamsAvailable(match); err != nil {
+		return err
+	}
+	arena.releaseClaimedMatch(match)
 
 	arena.CurrentMatch = match
 
@@ -442,6 +517,12 @@ func (arena *Arena) LoadNextMatch(startScheduledBreak bool) error {
 	nextMatch, err := arena.getNextMatch(false)
 	if err != nil {
 		return err
+	}
+	if nextMatch == nil && arena.usesDynamicClaims(arena.CurrentMatch.Type) {
+		if err = arena.LoadNextAvailableMatch(); err == nil {
+			return nil
+		}
+		log.Printf("No match available to claim from the hub: %v", err)
 	}
 	if nextMatch == nil {
 		return arena.LoadTestMatch()
@@ -889,15 +970,21 @@ func (arena *Arena) logTeamSnapshots() {
 
 // Loops indefinitely to track and update the arena components.
 func (arena *Arena) Run() {
-	// Bind the shared driver station UDP socket before any loop sends control packets from it.
-	arena.initializeUdpListener()
+	if arena.UsesFieldHardware() {
+		// Bind the shared driver station UDP socket before any loop sends control packets from it.
+		arena.initializeUdpListener()
 
-	// Start other loops in goroutines.
-	go arena.listenForDriverStations()
-	go arena.listenForDsUdpPackets()
-	go arena.accessPoint.Run()
-	go arena.Plc.Run()
-	go arena.Esp32.Run()
+		// Start other loops in goroutines.
+		go arena.listenForDriverStations()
+		go arena.listenForDsUdpPackets()
+		go arena.accessPoint.Run()
+		go arena.Plc.Run()
+		go arena.Esp32.Run()
+	} else if arena.EventSettings.IsHub() {
+		log.Printf("Running as the multi-field hub; field hardware and driver station listeners are disabled.")
+	} else {
+		log.Printf("Simulating field hardware; driver station listeners are disabled.")
+	}
 
 	for {
 		loopStartTime := time.Now()
@@ -1026,7 +1113,7 @@ func (arena *Arena) getNextMatch(excludeCurrent bool) (*model.Match, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, match := range matches {
+	for _, match := range arena.FilterMatchesForField(matches) {
 		if !match.IsComplete() && !(excludeCurrent && match.Id == arena.CurrentMatch.Id) {
 			return &match, nil
 		}
@@ -1096,6 +1183,9 @@ func (arena *Arena) setSCCEthernetEnabled(enabled bool) {
 
 // Asynchronously reconfigures the networking hardware for the new set of teams.
 func (arena *Arena) setupNetwork(teams [6]*model.Team, isPreload bool) {
+	if !arena.UsesFieldHardware() {
+		return
+	}
 	if isPreload {
 		arena.preloadedTeams = &teams
 	} else if arena.preloadedTeams != nil {
@@ -1145,6 +1235,15 @@ func (arena *Arena) getStartMatchConditions() []string {
 		arena.getAllianceStationStartConditions("R1", "R2", "R3", "B1", "B2", "B3")...,
 	)
 
+	if arena.EventSettings.IsHub() && arena.CurrentMatch.Type != model.Test {
+		conditions = append(conditions, "the hub has no field of its own; play this match on a field node")
+	}
+
+	if arena.CurrentMatch.Type == model.Playoff &&
+		(arena.CurrentMatch.PlayoffRedAlliance == 0 || arena.CurrentMatch.PlayoffBlueAlliance == 0) {
+		conditions = append(conditions, "both playoff alliances have not been determined yet")
+	}
+
 	if arena.Plc.IsEnabled() {
 		if !arena.Plc.IsHealthy() {
 			conditions = append(conditions, "PLC is not healthy")
@@ -1192,6 +1291,10 @@ func (arena *Arena) getAllianceStationStartConditions(stations ...string) []stri
 			aStopNotResetStations = append(aStopNotResetStations, station)
 		}
 		if !allianceStation.Bypass {
+			if arena.SimulateHardware {
+				// There are no robots to connect in simulation mode.
+				continue
+			}
 			if allianceStation.DsConn == nil || !allianceStation.DsConn.RobotLinked {
 				disconnectedStations = append(disconnectedStations, station)
 			}

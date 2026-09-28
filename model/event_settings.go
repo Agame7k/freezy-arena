@@ -6,9 +6,8 @@
 package model
 
 import (
-	"strings"
-
 	"github.com/Team254/cheesy-arena/game"
+	"strings"
 )
 
 type PlayoffType int
@@ -41,7 +40,7 @@ var (
 type EventSettings struct {
 	Id                               int `db:"id"`
 	Name                             string
-	LogoSuffix                  	 string
+	LogoSuffix                       string
 	PlayoffType                      PlayoffType
 	NumPlayoffAlliances              int
 	SelectionRound2Order             string
@@ -71,8 +70,8 @@ type EventSettings struct {
 	SCCDownCommands                  string
 	PlcAddress                       string
 	LedControllerAddress             string
-	AlternateIOEnabled          	 bool
-	ScoreTableEstopAddress  		 string
+	AlternateIOEnabled               bool
+	ScoreTableEstopAddress           string
 	RedAllianceStationEstopAddress   string
 	BlueAllianceStationEstopAddress  string
 	AdminPassword                    string
@@ -123,7 +122,26 @@ type EventSettings struct {
 	EnergizedBonusThreshold          int
 	SuperchargedBonusThreshold       int
 	TraversalBonusThreshold          int
-	FlashDSEnabled                  bool
+	FlashDSEnabled                   bool
+
+	// Multi-conference settings (shared from the hub to nodes).
+	MultiConferenceEnabled         bool
+	PreferMixedConferenceAlliances bool
+	ChampionshipFormat             ChampionshipFormat
+	ChampionshipSeriesLength       int
+	ChampionshipFieldMode          ChampionshipFieldMode
+	ChampionshipBreakSec           int
+	AllianceFinalizeMode           AllianceFinalizeMode
+
+	// Multi-field settings. The role, field identity and hub connection details are local to each machine.
+	MultiFieldRole               MultiFieldRole
+	FieldId                      int
+	FieldName                    string
+	HubAddress                   string
+	HubSharedSecret              string
+	QualFieldAssignmentMode      QualFieldAssignmentMode
+	MinTurnaroundSec             int
+	SinglePlayoffFieldInterleave bool
 }
 
 func (database *Database) GetEventSettings() (*EventSettings, error) {
@@ -138,27 +156,33 @@ func (database *Database) GetEventSettings() (*EventSettings, error) {
 
 	// Database record doesn't exist yet; create it now.
 	eventSettings := EventSettings{
-		Name:                       "Untitled Event",
-		LogoSuffix:                  "",
-		PlayoffType:                DoubleEliminationPlayoff,
-		NumPlayoffAlliances:        8,
-		SelectionRound2Order:       "L",
-		SelectionRound3Order:       "",
-		SelectionShowUnpickedTeams: true,
-		TbaDownloadEnabled:         true,
-		ApChannel:                  36,
-		AlternateIOEnabled:         false,
-		SCCUpCommands:              strings.Join(sccDefaultUpCommands, "\n"),
-		SCCDownCommands:            strings.Join(sccDefaultDownCommands, "\n"),
-		CompanionAddress:           "",
-		AutoDurationSec:            game.MatchTiming.AutoDurationSec,
-		PauseDurationSec:           game.MatchTiming.PauseDurationSec,
-		TransitionShiftDurationSec: game.MatchTiming.TransitionShiftDurationSec,
-		ShiftDurationSec:           game.MatchTiming.ShiftDurationSec,
-		EndgameDurationSec:         game.MatchTiming.EndgameDurationSec,
-		EnergizedBonusThreshold:    game.EnergizedBonusThreshold,
-		SuperchargedBonusThreshold: game.SuperchargedBonusThreshold,
-		TraversalBonusThreshold:    game.TraversalBonusThreshold,
+		Name:                         "Untitled Event",
+		LogoSuffix:                   "",
+		PlayoffType:                  DoubleEliminationPlayoff,
+		NumPlayoffAlliances:          8,
+		SelectionRound2Order:         "L",
+		SelectionRound3Order:         "",
+		SelectionShowUnpickedTeams:   true,
+		TbaDownloadEnabled:           true,
+		ApChannel:                    36,
+		AlternateIOEnabled:           false,
+		SCCUpCommands:                strings.Join(sccDefaultUpCommands, "\n"),
+		SCCDownCommands:              strings.Join(sccDefaultDownCommands, "\n"),
+		CompanionAddress:             "",
+		AutoDurationSec:              game.MatchTiming.AutoDurationSec,
+		PauseDurationSec:             game.MatchTiming.PauseDurationSec,
+		TransitionShiftDurationSec:   game.MatchTiming.TransitionShiftDurationSec,
+		ShiftDurationSec:             game.MatchTiming.ShiftDurationSec,
+		EndgameDurationSec:           game.MatchTiming.EndgameDurationSec,
+		EnergizedBonusThreshold:      game.EnergizedBonusThreshold,
+		SuperchargedBonusThreshold:   game.SuperchargedBonusThreshold,
+		TraversalBonusThreshold:      game.TraversalBonusThreshold,
+		ChampionshipSeriesLength:     3,
+		ChampionshipBreakSec:         900,
+		FieldId:                      1,
+		FieldName:                    "Field 1",
+		MinTurnaroundSec:             360,
+		SinglePlayoffFieldInterleave: true,
 	}
 
 	if err := database.eventSettingsTable.create(&eventSettings); err != nil {

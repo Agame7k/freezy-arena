@@ -14,10 +14,10 @@ func TestSetupBreaks(t *testing.T) {
 	web := setupTestWeb(t)
 
 	web.arena.Database.CreateScheduledBreak(
-		&model.ScheduledBreak{0, model.Playoff, 4, time.Unix(500, 0).UTC(), 900, "Field Break 1"},
+		&model.ScheduledBreak{0, model.Playoff, 4, time.Unix(500, 0).UTC(), 900, "Field Break 1", 0},
 	)
 	web.arena.Database.CreateScheduledBreak(
-		&model.ScheduledBreak{0, model.Playoff, 4, time.Unix(500, 0).UTC(), 900, "Field Break 2"},
+		&model.ScheduledBreak{0, model.Playoff, 4, time.Unix(500, 0).UTC(), 900, "Field Break 2", 0},
 	)
 
 	recorder := web.getHttpResponse("/setup/breaks")

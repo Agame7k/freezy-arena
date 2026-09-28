@@ -260,3 +260,57 @@ func (table *table[R]) getBucket(tx *bbolt.Tx) (*bbolt.Bucket, error) {
 func idToKey(id int) []byte {
 	return []byte(strconv.Itoa(id))
 }
+
+// Returns a JSON array containing every record in the table, ordered by string representation of ID.
+func (table *table[R]) snapshotJson() ([]byte, error) {
+	records, err := table.getAll()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(records)
+}
+
+// Replaces the entire contents of the table with the records in the given JSON array, preserving their IDs, inside a
+// single transaction. The bucket sequence is advanced past the highest ID so that subsequently created records don't
+// collide with the replaced ones.
+func (table *table[R]) replaceFromJson(recordsJson []byte) error {
+	var records []R
+	if err := json.Unmarshal(recordsJson, &records); err != nil {
+		return err
+	}
+
+	return table.bolt.Update(
+		func(tx *bbolt.Tx) error {
+			if err := tx.DeleteBucket(table.bucketKey); err != nil && err != bbolt.ErrBucketNotFound {
+				return err
+			}
+			bucket, err := tx.CreateBucket(table.bucketKey)
+			if err != nil {
+				return err
+			}
+
+			maxId := 0
+			for i := range records {
+				value := reflect.ValueOf(&records[i]).Elem()
+				id := int(value.Field(*table.idFieldIndex).Int())
+				if id == 0 {
+					return fmt.Errorf("can't replace %s record with zero ID", table.name)
+				}
+				if id > maxId {
+					maxId = id
+				}
+				recordJson, err := json.Marshal(records[i])
+				if err != nil {
+					return err
+				}
+				if err = bucket.Put(idToKey(id), recordJson); err != nil {
+					return err
+				}
+			}
+			if !table.manualId {
+				return bucket.SetSequence(uint64(maxId))
+			}
+			return nil
+		},
+	)
+}

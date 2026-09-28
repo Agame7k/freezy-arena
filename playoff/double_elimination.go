@@ -31,19 +31,31 @@ func newDoubleEliminationBracket(numAlliances int) (*Matchup, []breakSpec, error
 
 // Creates a four-alliance double-elimination bracket.
 func newFourAllianceDoubleEliminationBracket() (*Matchup, []breakSpec, error) {
+	return newFourAllianceDoubleEliminationBracketFromSources(
+		[4]allianceSource{
+			allianceSelectionSource{1},
+			allianceSelectionSource{2},
+			allianceSelectionSource{3},
+			allianceSelectionSource{4},
+		},
+	)
+}
+
+// Creates a four-alliance double-elimination bracket whose four seeds are filled from the given sources, in seed order.
+func newFourAllianceDoubleEliminationBracketFromSources(seeds [4]allianceSource) (*Matchup, []breakSpec, error) {
 	// Define Round 1 matches.
 	m1 := Matchup{
 		id:                 "M1",
 		NumWinsToAdvance:   1,
-		redAllianceSource:  allianceSelectionSource{1},
-		blueAllianceSource: allianceSelectionSource{4},
+		redAllianceSource:  seeds[0],
+		blueAllianceSource: seeds[3],
 		matchSpecs:         newDoubleEliminationMatch(1, "Round 1 Upper", 540),
 	}
 	m2 := Matchup{
 		id:                 "M2",
 		NumWinsToAdvance:   1,
-		redAllianceSource:  allianceSelectionSource{2},
-		blueAllianceSource: allianceSelectionSource{3},
+		redAllianceSource:  seeds[1],
+		blueAllianceSource: seeds[2],
 		matchSpecs:         newDoubleEliminationMatch(2, "Round 1 Upper", 540),
 	}
 

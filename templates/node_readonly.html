@@ -1,0 +1,31 @@
+{{/*
+Copyright 2026 Team 254. All Rights Reserved.
+
+Shown on a field node when someone tries to change event data that the hub owns.
+*/}}
+{{define "title"}}Change this on the hub{{end}}
+{{define "body"}}
+<div class="row justify-content-center mt-4">
+  <div class="col-lg-7">
+    <div class="card card-body bg-body-tertiary">
+      <h3><i class="bi bi-diagram-3 me-2"></i>Make this change on the hub</h3>
+      <p>
+        This laptop runs <b>{{.EventSettings.DisplayFieldName}}</b> as a field node. Its teams, schedule, alliances and
+        awards are copied from the hub, so a change made here would be overwritten the next time the hub updates.
+      </p>
+      <p class="mb-3">Make the change on the hub instead; it will reach this field within a few seconds.</p>
+      <div>
+        {{if .EventSettings.HubAddress}}
+        <a class="btn btn-primary" href="{{.EventSettings.HubAddress}}{{.Path}}" target="_blank">Open this page on the hub</a>
+        {{end}}
+        <a class="btn btn-secondary" href="{{if .Back}}{{.Back}}{{else}}/match_play{{end}}">Go back</a>
+      </div>
+      <p class="small text-body-secondary mt-3 mb-0">
+        If the hub is down for good, <b>Settings → Multi-Field → Promote node to standalone</b> lets this field carry on
+        by itself.
+      </p>
+    </div>
+  </div>
+</div>
+{{end}}
+{{define "script"}}{{end}}
