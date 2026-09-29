@@ -1,4 +1,4 @@
-﻿/*
+/*
   Copyright 2014 Team 254. All Rights Reserved.
   Author: pat@patfairbank.com (Patrick Fairbank)
 */
@@ -7,10 +7,203 @@
 @import url("/static/css/match_intro.css");
 @import url("/static/css/winner_reveal.css");
 
-/* Hidden position; must clear the overlay height plus the match circle's overhang and glow so nothing peeks in. */
+/* Alliance colors. The accents are for text, lines and glows on dark backgrounds; the outer/inner pairs are the panel
+   gradients, lighter at the outside edge of the screen and darker towards the middle. body[data-reversed] swaps which
+   side of the screen each alliance is on. */
+body {
+  --red-accent: #ff5571;
+  --blue-accent: #4da3ff;
+  --red-outer: #b0243f;
+  --red-inner: #6e1530;
+  --blue-outer: #1f63b8;
+  --blue-inner: #123a70;
+  --left-accent: var(--red-accent);
+  --right-accent: var(--blue-accent);
+  --gold: #ffd166;
+  --navy: #0b1728;
+  background: #050a14;
+}
+body[data-reversed=true] {
+  --left-accent: var(--blue-accent);
+  --right-accent: var(--red-accent);
+}
+html {
+  background: #050a14;
+}
+
+/* Every alliance-colored panel (the score bar, the final score and the final team boxes) uses the same gradients. */
+.reversible-left:not([data-reversed=true]) {
+  background: linear-gradient(90deg, var(--red-outer), var(--red-inner));
+}
+.reversible-left[data-reversed=true] {
+  background: linear-gradient(90deg, var(--blue-outer), var(--blue-inner));
+}
+.reversible-right:not([data-reversed=true]) {
+  background: linear-gradient(90deg, var(--blue-inner), var(--blue-outer));
+}
+.reversible-right[data-reversed=true] {
+  background: linear-gradient(90deg, var(--red-inner), var(--red-outer));
+}
+
+/* The in-match score bar ------------------------------------------------------------------------------------------- */
+
+/* Hidden position; must clear the overlay height plus the match circle's overhang so nothing peeks in. */
 #overlayCentering {
   bottom: -270px;
+  height: 205px;
 }
+#matchOverlay {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(9, 20, 36, 0.98), rgba(18, 34, 57, 0.96));
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+}
+#matchOverlayTop {
+  height: 140px;
+  padding: 0 10px;
+  gap: 4px;
+  align-items: center;
+}
+.teams {
+  width: 126px;
+  background: rgba(5, 10, 20, 0.55);
+  color: #f8fafc;
+  font-family: "FuturaLTBold";
+  font-size: 28px;
+  line-height: 34px;
+}
+#leftTeams {
+  border-left: 6px solid var(--left-accent);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+#rightTeams {
+  border-right: 6px solid var(--right-accent);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+/* Dark text on the yellow-card highlight, since the team columns are otherwise light text on dark. */
+.teams div[data-yellow-card=true] {
+  color: var(--navy);
+}
+/* The playoff alliance card glyph, sized up for the broadcast bar. */
+.teams[data-alliance-card=yellow]::after {
+  top: 8px;
+  width: 13px;
+  height: 18px;
+}
+#leftTeams[data-alliance-card=yellow]::after {
+  right: 8px;
+}
+#rightTeams[data-alliance-card=yellow]::after {
+  left: 8px;
+}
+.score-number {
+  width: 170px;
+  color: #fff;
+  font-size: 76px;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.9;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.3);
+}
+/* No height here: the JS reads the collapsed height from the stylesheet and animates it open to eventMatchInfoDown. */
+#eventMatchInfo {
+  /* The shared z-index of -1 would paint this bar underneath #matchOverlay's opaque background. */
+  z-index: 0;
+  padding: 0 16px;
+  background: rgba(4, 10, 20, 0.86);
+  color: #b6c3d4;
+  font-family: "FuturaLTBold";
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  line-height: 36px;
+  text-transform: uppercase;
+}
+#eventMatchInfo #matchName {
+  color: var(--gold);
+}
+#matchCircle {
+  width: 180px;
+  height: 180px;
+  background: #f8fafc;
+  border: 7px solid #172b46;
+  box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.7), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+#matchCircle #logo {
+  top: 58px;
+  height: 48px;
+}
+#matchTime {
+  top: 46px;
+  color: var(--navy);
+  font-size: 42px;
+  font-variant-numeric: tabular-nums;
+  transition: color 200ms ease;
+}
+/* The last ten seconds of the match. */
+#matchTime[data-urgent=true] {
+  color: #d6283f;
+}
+
+/* A ring that rolls off the match circle when an alliance takes the lead or the endgame starts; see pulseRing. */
+#leadPulse {
+  --pulse-color: var(--gold);
+  position: absolute;
+  top: -25px;
+  width: 180px;
+  height: 180px;
+  border: 6px solid var(--pulse-color);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The current period of the match, on a tab above the match circle (below it when the bar is at the top). */
+#phaseTab {
+  position: absolute;
+  top: -66px;
+  height: 34px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: var(--navy);
+  color: var(--gold);
+  font-family: "FuturaLTBold";
+  font-size: 18px;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  text-transform: uppercase;
+  clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+  opacity: 0;
+  transition: background-color 300ms ease, color 300ms ease;
+}
+#phaseTabText {
+  display: inline-block;
+}
+#phaseTab[data-phase=endgame] {
+  background: var(--gold);
+  color: var(--navy);
+}
+body[data-overlay-location=top] #phaseTab {
+  top: 162px;
+}
+
+@media (max-width: 1100px) {
+  #matchOverlayTop {
+    gap: 8px;
+  }
+
+  #leftTeams,
+  #rightTeams {
+    font-size: clamp(20px, 3vw, 42px);
+  }
+}
+
+/* Full-screen backdrop, logo disc, final score, bracket and sponsors ------------------------------------------------ */
+
 #blindsContainer {
   position: fixed;
   top: 0;
@@ -31,7 +224,7 @@
   background-size: cover;
   clip-path: circle(0px at 50% 50%);
 }
-/* Shockwave that rides out ahead of the iris edge as the backdrop opens. */
+/* A ring that rides out ahead of the iris edge as the backdrop opens. */
 #blindsRing {
   position: absolute;
   top: 0;
@@ -42,8 +235,7 @@
   width: 310px;
   height: 310px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 209, 102, 0.9);
-  box-shadow: 0 0 30px rgba(255, 209, 102, 0.45), inset 0 0 30px rgba(255, 209, 102, 0.25);
+  border: 3px solid var(--gold);
   opacity: 0;
   pointer-events: none;
   z-index: 1;
@@ -58,18 +250,18 @@
   width: 310px;
   height: 310px;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #fff 0%, #eef2f7 100%);
-  box-shadow: 0 0 0 6px rgba(255, 209, 102, 0.9), 0 0 0 14px rgba(11, 23, 40, 0.55), 0 24px 70px rgba(0, 0, 0, 0.5);
+  background: #f8fafc;
+  box-shadow: 0 0 0 6px var(--gold), 0 0 0 14px rgba(11, 23, 40, 0.55), 0 24px 70px rgba(0, 0, 0, 0.5);
   text-align: center;
   z-index: 2;
   opacity: 0;
-  transform: translateY(0px) scale(0.2) rotate(-120deg);
 }
 #blindsLogo {
   position: relative;
   top: 55px;
   height: 220px;
 }
+
 #finalScoreCentering {
   position: fixed;
   width: 100%;
@@ -80,10 +272,11 @@
 }
 #finalScore {
   position: relative;
-  width: 1000px;
+  width: min(1200px, 90vw);
   display: flex;
   flex-direction: column;
-  border: 2px solid #333;
+  background: #0c1728;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.45);
   opacity: 0;
 }
 #finalResultIndicators {
@@ -108,20 +301,28 @@
   padding-left: 150px;
 }
 .final-result-indicator, #finalTiebreakReason {
-  min-width: 270px;
   height: 63px;
-  padding: 0 36px;
-  border: 2px solid #333;
-  border-radius: 0;
   display: none;
   justify-content: center;
   align-items: center;
-  background-color: #fc3;
-  color: #222;
   font-family: "FuturaLTBold";
-  font-size: 36px;
   line-height: 63px;
   text-align: center;
+  clip-path: polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%);
+}
+.final-result-indicator {
+  min-width: 270px;
+  padding: 0 40px;
+  background: var(--gold);
+  color: var(--navy);
+  font-size: 32px;
+  letter-spacing: 0.1em;
+}
+.final-result-indicator[data-result=tie] {
+  background: #b6c3d4;
+}
+.final-result-indicator[data-result=winner], .final-result-indicator[data-result=tie] {
+  display: flex;
 }
 #finalTiebreakReason {
   position: absolute;
@@ -130,43 +331,12 @@
   right: 0;
   width: fit-content;
   margin: 0 auto;
+  padding: 0 40px;
+  background: var(--navy);
+  color: #fff;
+  font-size: 24px;
+  letter-spacing: 0.06em;
   pointer-events: none;
-}
-.final-result-indicator[data-result=tie] {
-  background-color: #999;
-}
-.final-result-indicator[data-result=winner], .final-result-indicator[data-result=tie] {
-  display: flex;
-}
-/* Gives the reveal moment some real visual weight: once the badges land (see revealFinalScore), a single band of
-   light sweeps across them and the winner settles into a slow, steady breathing glow rather than a busy pulse. */
-.final-result-indicator, .final-destination {
-  position: relative;
-  overflow: hidden;
-}
-.final-result-indicator::after, .final-destination::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.8) 50%, transparent 70%);
-  transform: translateX(-120%);
-  pointer-events: none;
-}
-.final-result-indicator[data-shine]::after, .final-destination[data-shine]::after {
-  animation: badge-shine 1.2s cubic-bezier(0.65, 0, 0.35, 1) forwards;
-}
-@keyframes badge-shine {
-  to { transform: translateX(120%); }
-}
-.final-result-indicator[data-result=winner][data-shine] {
-  animation: final-winner-badge-breathe 3.2s ease-in-out 1.2s infinite;
-}
-@keyframes final-winner-badge-breathe {
-  0%, 100% { box-shadow: 0 8px 26px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(255, 209, 102, 0); }
-  50% { box-shadow: 0 8px 26px rgba(0, 0, 0, 0.3), 0 0 36px 6px rgba(255, 209, 102, 0.45); }
 }
 #finalTiebreakReason[data-visible=true] {
   display: flex;
@@ -177,21 +347,19 @@
 }
 .final-score {
   width: 50%;
-  height: 200px;
-  line-height: 200px;
-  border-bottom: 2px solid #333;
+  height: 220px;
   color: #fff;
   font-family: "FuturaLTBold";
-  font-size: 100px;
+  font-size: 124px;
+  font-variant-numeric: tabular-nums;
+  line-height: 220px;
   text-align: center;
-  text-shadow: 0 0 3px #333;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  transition: color 400ms ease;
 }
-.final-score[data-result=winner] {
-  animation: final-score-winner-glow 3.2s ease-in-out infinite;
-}
-@keyframes final-score-winner-glow {
-  0%, 100% { text-shadow: 0 0 28px rgba(255, 209, 102, 0.35); }
-  50% { text-shadow: 0 0 48px rgba(255, 209, 102, 0.75), 0 0 12px rgba(255, 255, 255, 0.4); }
+/* Once the verdict is in, the losing score steps back. */
+.final-score[data-settled][data-result=""] {
+  color: rgba(255, 255, 255, 0.5);
 }
 #leftFinalScore {
   padding-right: 150px;
@@ -204,7 +372,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  background-color: #fff;
+  background: #f8fafc;
   color: #222;
   font-family: "FuturaLT";
   font-size: 24px;
@@ -235,16 +403,19 @@
 .final-teams {
   width: 250px;
   padding: 20px;
-  border-radius: 20px;
+  border-radius: 8px;
 }
 .final-alliance {
   margin-top: -10px;
   margin-bottom: 10px;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   justify-content: center;
+  align-items: center;
+  gap: 6px;
   color: #fff;
   font-size: 24px;
+  white-space: nowrap;
 }
 .final-team-row {
   display: flex;
@@ -284,17 +455,14 @@
   transform: rotate(-8deg);
 }
 .final-team-card div[data-card=yellow] {
-  background: linear-gradient(135deg, #ffe066, #fcc419);
-  box-shadow: 0 0 10px rgba(255, 212, 59, 0.8);
+  background: #fcc419;
 }
 .final-team-card div[data-card=red] {
-  background: linear-gradient(135deg, #ff6b6b, #e03131);
-  box-shadow: 0 0 10px rgba(255, 70, 70, 0.8);
+  background: #e03131;
 }
 .final-team-card div[data-card=dq] {
   background: #111;
   border: 2px solid #e03131;
-  box-shadow: 0 0 10px rgba(255, 70, 70, 0.6);
 }
 
 /* A team with a red card or DQ is struck through: dimmed, with a line drawing across its digits once the card lands.
@@ -329,36 +497,28 @@
   to { transform: rotate(-8deg) scaleX(1); }
 }
 
-/* In playoffs a card belongs to the whole alliance, so it's shown once as a pill under the alliance's name (the team
+/* In playoffs a card belongs to the whole alliance, so it's shown once as a plate under the alliance's name (the team
    boxes are too narrow to fit both on one line). */
-.final-alliance {
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
 .final-alliance-card {
-  padding: 2px 12px;
-  border-radius: 999px;
+  padding: 2px 14px;
   font-family: "FuturaLTBold";
   font-size: 15px;
   letter-spacing: 0.1em;
   line-height: 22px;
   text-transform: uppercase;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 .final-alliance-card[data-card=yellow] {
   background: #fcc419;
-  box-shadow: 0 0 12px rgba(255, 212, 59, 0.7);
-  color: #0b1728;
+  color: var(--navy);
 }
 .final-alliance-card[data-card=red] {
   background: #e03131;
-  box-shadow: 0 0 12px rgba(255, 70, 70, 0.7);
   color: #fff;
 }
 .final-alliance-card[data-card=dq] {
   background: #111;
-  border: 2px solid #e03131;
+  box-shadow: inset 0 0 0 2px #e03131;
   color: #fff;
 }
 .final-team-rank {
@@ -379,17 +539,18 @@
   margin-top: 10px;
   width: 200px;
   height: 45px;
-  border-radius: 5px;
   display: flex;
   justify-content: center;
   align-items: center;
-  text-align: center;
-  background-color: #999;
+  background-color: #b6c3d4;
+  color: var(--navy);
   font-size: 15px;
   line-height: 18px;
+  text-align: center;
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
 }
 .final-destination[data-won=true] {
-  background-color: #fc3;
+  background-color: var(--gold);
 }
 #finalEventMatchInfo {
   height: 60px;
@@ -398,10 +559,10 @@
   justify-content: space-between;
   align-items: center;
   padding: 0 25px;
+  background-color: #050a14;
+  color: #fff;
   font-family: "FuturaLT";
   font-size: 28px;
-  background-color: #444;
-  color: #fff;
 }
 [data-checked=true] {
   color: #0c0;
@@ -417,6 +578,7 @@
 #finalMatchName {
   text-align: right;
 }
+
 #bracket {
   position: fixed;
   top: 0;
@@ -431,6 +593,7 @@
 #bracketSvg {
   width: 1920px;
 }
+
 #sponsor {
   position: fixed;
   width: 1000px;
@@ -440,10 +603,11 @@
   left: 0;
   right: 0;
   margin: auto auto;
-  border: 2px solid #333;
+  overflow: hidden;
   z-index: 1;
   opacity: 0;
   background-color: #fff;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.4);
   text-align: center;
 }
 #sponsor .carousel-inner, #sponsor .carousel-item {
@@ -461,7 +625,7 @@
 }
 #sponsor h1 {
   font-size: 60px;
-  background-color: #444;
+  background-color: var(--navy);
   color: #fff;
   padding: 0.25em;
   position: absolute;
@@ -479,6 +643,21 @@
   max-width: 800px;
   max-height: 400px;
 }
+/* Sponsor slides crossfade and drift very slightly while on screen. */
+#sponsor.carousel-fade .carousel-item {
+  transition-duration: 0.9s;
+  transition-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+}
+#sponsor .carousel-item.active img, #sponsor .carousel-item.active h2 {
+  animation: sponsor-drift 14s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes sponsor-drift {
+  from { transform: scale(1.06); }
+  to { transform: scale(1); }
+}
+
+/* Alliance selection ------------------------------------------------------------------------------------------------ */
+
 #allianceRankingsCentering {
   position: absolute;
   height: 100%;
@@ -539,17 +718,78 @@
   width: 3.1em;
   color: #222;
 }
+/* Called out at the bottom of the screen each time a team is picked; see showPickCallout. */
+#pickCallout {
+  position: absolute;
+  left: 50%;
+  bottom: 7vh;
+  display: none;
+  flex-direction: column;
+  align-items: flex-start;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+#pickCalloutLabel {
+  padding: 6px 34px 4px 22px;
+  background: var(--gold);
+  color: var(--navy);
+  font-family: "FuturaLTBold";
+  font-size: 24px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+#pickCalloutBody {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 14px 56px 14px 24px;
+  background: var(--navy);
+  color: #fff;
+  font-family: "FuturaLTBold";
+  clip-path: polygon(0 0, 100% 0, calc(100% - 28px) 100%, 0 100%);
+}
+#pickCalloutAvatar {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+#pickCalloutTeam {
+  font-size: 92px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Lower third ------------------------------------------------------------------------------------------------------- */
+
+/* A gold accent bar on the leading edge of a white card. The wipe itself is animated from JS, starting fully clipped
+   away. */
 #lowerThird {
   display: none;
   position: absolute;
   left: 150px;
   bottom: 100px;
-  background-color: #fff;
-  border: 1px solid #222;
-  color: #222;
-  font-size: 30px;
   width: 800px;
   height: 87px;
+  overflow: hidden;
+  padding-left: 8px;
+  background-color: #fff;
+  color: #222;
+  font-size: 30px;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  clip-path: inset(0 100% 0 0);
+}
+#lowerThird::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  background: var(--gold);
 }
 #lowerThirdLogo {
   margin: 12px 20px;
@@ -573,356 +813,4 @@
   display: none;
   font-family: "FuturaLTBold";
   line-height: 87px;
-}
-
-body:has(#matchOverlayContainer) {
-  --audience-ink: #f8fafc;
-  --audience-muted: #b6c3d4;
-  --audience-gold: #ffd166;
-  --audience-red: #ff5571;
-  --audience-blue: #4da3ff;
-  background: #050a14;
-}
-
-#matchOverlayContainer {
-  filter: drop-shadow(0 10px 34px rgba(0, 0, 0, .35));
-}
-
-#matchOverlay {
-  border: 1px solid rgba(255, 255, 255, .14);
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(9, 20, 36, .96), rgba(18, 34, 57, .92));
-  box-shadow: 0 18px 60px rgba(0, 0, 0, .32);
-}
-
-#matchOverlayTop {
-  align-items: center;
-  gap: 18px;
-}
-
-#eventMatchInfo {
-  color: var(--audience-muted);
-  font-size: clamp(18px, 2vw, 30px);
-  font-weight: 700;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
-
-#eventMatchInfo #matchName {
-  color: var(--audience-gold);
-}
-
-/* Font size and spacing for the team columns are set in the broadcast block below; sizing them here (with ID
-   selectors) overrode those rules and made the team numbers overflow the fixed-width columns. */
-#leftTeams,
-#rightTeams {
-  color: var(--audience-ink);
-  font-weight: 800;
-}
-
-#leftTeams {
-  border-left: 8px solid var(--audience-red);
-}
-
-#rightTeams {
-  border-right: 8px solid var(--audience-blue);
-}
-
-.score-number {
-  color: var(--audience-gold);
-  font-size: clamp(64px, 8vw, 150px);
-  font-weight: 900;
-  line-height: .9;
-  text-shadow: 0 0 28px rgba(255, 209, 102, .32);
-}
-
-#matchCircle #logo {
-  filter: drop-shadow(0 0 28px rgba(77, 163, 255, .35));
-}
-
-#matchTime {
-  color: var(--audience-ink);
-  font-size: clamp(54px, 7vw, 132px);
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 25px rgba(255, 255, 255, .22);
-}
-
-#finalScore {
-  border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 18px;
-  overflow: visible;
-  background: linear-gradient(135deg, #0c1728, #142841);
-  box-shadow: 0 20px 70px rgba(0, 0, 0, .4);
-}
-
-.final-score {
-  color: var(--audience-gold);
-  font-weight: 900;
-  text-shadow: 0 0 24px rgba(255, 209, 102, .3);
-}
-
-.final-result-indicator {
-  border-radius: 999px;
-  border-color: transparent;
-  font-weight: 900;
-  letter-spacing: .08em;
-}
-
-#sponsor {
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: 0 20px 70px rgba(0, 0, 0, .4);
-}
-
-/* Broadcast-first presentation. The existing display JavaScript controls all visibility and transitions; these rules
-   only improve the visual language of the same production DOM. */
-html {
-  background: #050a14;
-}
-
-#overlayCentering {
-  height: 205px;
-}
-
-#matchOverlay {
-  border: 0;
-  border-radius: 18px;
-  overflow: hidden;
-  background: linear-gradient(135deg, rgba(9, 20, 36, .98), rgba(18, 34, 57, .96));
-  box-shadow: 0 18px 60px rgba(0, 0, 0, .42);
-}
-
-#matchOverlayTop {
-  height: 140px;
-  padding: 0 10px;
-  gap: 4px;
-}
-
-.teams {
-  width: 126px;
-  background: rgba(5, 10, 20, .55);
-  color: #f8fafc;
-  font-family: "FuturaLTBold";
-  font-size: 28px;
-  line-height: 34px;
-}
-
-#leftTeams {
-  border-right: 3px solid #ff5571;
-  border-radius: 12px 0 0 12px;
-}
-
-#rightTeams {
-  border-left: 3px solid #4da3ff;
-  border-radius: 0 12px 12px 0;
-}
-
-/* Dark text on the yellow-card highlight, since the team columns here are otherwise light text on dark. */
-.teams div[data-yellow-card=true] {
-  color: #0b1728;
-}
-
-/* The playoff alliance card glyph, sized up for the broadcast bar. */
-.teams[data-alliance-card=yellow]::after {
-  top: 8px;
-  width: 13px;
-  height: 18px;
-}
-
-#leftTeams[data-alliance-card=yellow]::after {
-  right: 8px;
-}
-
-#rightTeams[data-alliance-card=yellow]::after {
-  left: 8px;
-}
-
-.score-number {
-  width: 170px;
-  font-size: 76px;
-  text-shadow: 0 0 26px rgba(255, 209, 102, .35);
-}
-
-.score.reversible-left {
-  background: linear-gradient(90deg, #7e213c, #4d1d32) !important;
-}
-
-.score.reversible-right {
-  background: linear-gradient(90deg, #1d3d6a, #1e5b99) !important;
-}
-
-/* No height here: the JS reads the collapsed height from the stylesheet and animates it open to eventMatchInfoDown. */
-#eventMatchInfo {
-  /* The shared z-index of -1 would paint this bar underneath #matchOverlay's opaque background. */
-  z-index: 0;
-  padding: 0 16px;
-  background: rgba(4, 10, 20, .86);
-  color: #b6c3d4;
-  font-family: "FuturaLTBold";
-  font-size: 17px;
-  letter-spacing: .04em;
-  line-height: 36px;
-  text-transform: uppercase;
-}
-
-#eventMatchInfo #matchName {
-  color: #ffd166;
-}
-
-#matchCircle {
-  width: 180px;
-  height: 180px;
-  background: #f8fafc;
-  border: 7px solid #172b46;
-  box-shadow: 0 0 0 2px rgba(255, 209, 102, .7), 0 0 32px rgba(77, 163, 255, .35);
-}
-
-#matchCircle #logo {
-  top: 58px;
-  height: 48px;
-}
-
-#matchTime {
-  top: 46px;
-  font-size: 42px;
-  color: #0b1728;
-}
-
-#finalScore {
-  width: min(1200px, 90vw);
-  border: 0;
-  border-radius: 18px;
-  overflow: visible;
-  background: linear-gradient(135deg, #0c1728, #142841);
-  box-shadow: 0 20px 70px rgba(0, 0, 0, .45);
-}
-
-.final-score {
-  height: 220px;
-  line-height: 220px;
-  color: #ffd166;
-  font-size: 124px;
-  text-shadow: 0 0 28px rgba(255, 209, 102, .35);
-}
-
-.final-result-indicator {
-  border: 0;
-  border-radius: 999px;
-  font-family: "FuturaLTBold";
-  font-size: 32px;
-  letter-spacing: .1em;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, .3);
-}
-
-.final-breakdown {
-  background: #f8fafc;
-}
-
-@media (max-width: 1100px) {
-  #matchOverlayTop {
-    gap: 8px;
-  }
-
-  #leftTeams,
-  #rightTeams {
-    font-size: clamp(20px, 3vw, 42px);
-  }
-}
-
-/* Motion styling. Screen transitions themselves are driven from audience_display.js with the Web Animations API;
-   these rules cover the ambient, CSS-only effects that accompany them. */
-
-#matchOverlay {
-  position: relative;
-}
-
-/* A single band of light that sweeps across the bug whenever it opens into a new layout (see playSheen). */
-#matchOverlay::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 3;
-  pointer-events: none;
-  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.2) 50%, transparent 62%);
-  transform: translateX(-110%);
-}
-#matchOverlay[data-sheen]::after {
-  animation: overlay-sheen 1.3s cubic-bezier(0.65, 0, 0.35, 1) 0.35s forwards;
-}
-@keyframes overlay-sheen {
-  to { transform: translateX(110%); }
-}
-
-/* During the match intro, a comet of light orbits the bug's border to build anticipation before the timer starts.
-   This replaces the shared overlay's pulsing glow on the audience display. */
-@property --comet-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-#matchOverlay[data-mode="intro"] {
-  animation: none;
-}
-#matchOverlay::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 3;
-  padding: 2px;
-  border-radius: inherit;
-  pointer-events: none;
-  background: conic-gradient(from var(--comet-angle), transparent 0deg 250deg, rgba(255, 209, 102, 0) 262deg,
-    #ffd166 345deg, #fff 357deg, transparent 360deg);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 600ms ease;
-}
-#matchOverlay[data-mode="intro"]::before {
-  opacity: 1;
-  animation: comet-orbit 2.6s linear infinite;
-}
-@keyframes comet-orbit {
-  to { --comet-angle: 360deg; }
-}
-
-/* Lower third: a gold accent bar on the leading edge, and a clean card instead of a plain box. The wipe itself is
-   animated from JS, starting fully clipped away. */
-#lowerThird {
-  overflow: hidden;
-  border: 0;
-  border-radius: 0 14px 14px 0;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
-  clip-path: inset(0 100% 0 0);
-  padding-left: 8px;
-}
-#lowerThird::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 8px;
-  background: linear-gradient(180deg, #ffd166, #f59e0b);
-}
-
-/* Sponsor slides crossfade on the shared easing and drift very slightly while on screen. */
-#sponsor.carousel-fade .carousel-item {
-  transition-duration: 0.9s;
-  transition-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
-}
-#sponsor .carousel-item.active img, #sponsor .carousel-item.active h2 {
-  animation: sponsor-drift 14s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes sponsor-drift {
-  from { transform: scale(1.06); }
-  to { transform: scale(1); }
 }

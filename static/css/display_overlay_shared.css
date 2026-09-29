@@ -31,15 +31,6 @@ html {
   font-size: 22px;
 }
 
-/* A brief pulsing glow while the match intro is showing, to build a little anticipation before the timer starts. */
-#matchOverlay[data-mode="intro"] {
-  animation: intro-glow-pulse 1.6s ease-in-out infinite;
-}
-@keyframes intro-glow-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 204, 51, 0.5); }
-  50% { box-shadow: 0 0 18px 4px rgba(255, 204, 51, 0.35); }
-}
-
 #matchOverlayTop {
   height: 100px;
   display: flex;
@@ -235,6 +226,36 @@ html {
 
 .score-hub-active[data-active=true] .progress-guide {
   opacity: 0.35;
+}
+
+/* "+15 TOWER" floating off a score when a climb or foul points land; see DisplayShared.createScorePopper. */
+.score-chip {
+  position: fixed;
+  z-index: 5;
+  padding: 2px 16px 0;
+  background: #ffd166;
+  color: #0b1728;
+  font-family: "FuturaLTBold";
+  font-size: 30px;
+  line-height: 40px;
+  white-space: nowrap;
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  pointer-events: none;
+}
+
+.score-chip-label {
+  margin-left: 8px;
+  font-size: 17px;
+  letter-spacing: 0.12em;
+  vertical-align: 3px;
+}
+
+/* The ring pops in when an alliance's hub becomes active, so the shift change catches the eye. */
+.score-hub-active[data-active=true] svg {
+  animation: hub-activate 550ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes hub-activate {
+  from { transform: scale(0.3); }
 }
 
 .progress-time {

@@ -21,6 +21,14 @@ let overlayCenteringShowParams;
 let lowerThirdVisible = false;
 // Everything the winner reveal needs about the most recently posted result; null until a score has been posted.
 let revealData = null;
+// Live-match state for the scoring effects: the last callout points seen for each alliance (null until the first update
+// for this match), which alliance last held the lead, the period shown on the phase tab, and the last second the timer
+// ticked in the final countdown.
+let scorePopper;
+let lastScores = null;
+let leadingAlliance = "";
+let currentPhase = "";
+let lastUrgentSecond = null;
 const hubActiveController = DisplayShared.createHubActiveController(function () {
   return currentScreen;
 });
@@ -40,7 +48,9 @@ const logoUp = "35px";
 const logoDown = $("#logo").css("top");
 const scoreIn = $(".score").css("width");
 const scoreMid = "185px";
-const scoreOut = "400px";
+// Wide enough for the score fields (180px) and the score number (170px, room for three digits) plus the 90px the
+// match circle covers at the inner end, so no digit ever ends up hidden behind it.
+const scoreOut = "440px";
 const scoreFieldsOut = "180px";
 const timeoutDetailsIn = $("#timeoutDetails").css("width");
 const timeoutDetailsOut = "570px";
@@ -54,36 +64,43 @@ const discBracketScale = 0.75;
 const discRadius = "155px";
 
 // Motion language shared by every transition. Things arrive fast and settle softly, leave by accelerating away, and
-// move in place along a symmetric curve; "pop" adds a touch of overshoot for small elements landing. Exits are kept
-// noticeably shorter than entrances so the display never feels like it is waiting on itself.
+// move in place along a symmetric curve; "pop" adds a touch of overshoot for small elements landing and "stampIn"
+// accelerates into a hit, for things that slam down. Exits are kept noticeably shorter than entrances so the display
+// never feels like it is waiting on itself.
 const ease = {
   in: "cubic-bezier(0.16, 1, 0.3, 1)",
   out: "cubic-bezier(0.7, 0, 0.84, 0)",
   move: "cubic-bezier(0.65, 0, 0.35, 1)",
   pop: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+  stampIn: "cubic-bezier(0.55, 0, 1, 0.45)",
 };
 
-// Reusable keyframe pairs.
-const blurIn = [
-  {opacity: 0, filter: "blur(10px)", transform: "translateY(10px)"},
-  {opacity: 1, filter: "blur(0px)", transform: "translateY(0px)"},
+// Reusable keyframes.
+const riseIn = [
+  {opacity: 0, transform: "translateY(35%)"},
+  {opacity: 1, transform: "translateY(0px)"},
 ];
-const blurOut = [{opacity: 0, filter: "blur(8px)", transform: "translateY(-6px)"}];
+const fadeOut = [{opacity: 0, transform: "translateY(-10%)"}];
 const popIn = [{opacity: 0, transform: "scale(0.4)"}, {opacity: 1, transform: "scale(1)"}];
 const popOut = [{opacity: 0, transform: "scale(0.6)"}];
 const slideIn = function (fromX) {
   return [
-    {opacity: 0, filter: "blur(6px)", transform: `translateX(${fromX}px)`},
-    {opacity: 1, filter: "blur(0px)", transform: "translateX(0px)"},
+    {opacity: 0, transform: `translateX(${fromX}px)`},
+    {opacity: 1, transform: "translateX(0px)"},
+  ];
+};
+// Drops onto the screen from larger than life, overshoots a touch small on impact and settles.
+const stamp = function (fromScale) {
+  return [
+    {opacity: 0, transform: `scale(${fromScale})`, easing: ease.stampIn},
+    {opacity: 1, transform: "scale(0.95)", offset: 0.6, easing: ease.in},
+    {opacity: 1, transform: "scale(1)"},
   ];
 };
 
-// Transforms and filters that leave an element looking untouched are stored as "none" once an animation settles, so
-// the element doesn't stay promoted to its own compositing layer (which can leave text rendering slightly soft).
+// Transforms that leave an element looking untouched are stored as "none" once an animation settles, so the element
+// doesn't stay promoted to its own compositing layer (which can leave text rendering slightly soft).
 const restingValue = function (property, value) {
-  if (property === "filter" && /^blur\(0(px)?\)$/.test(value)) {
-    return "none";
-  }
   if (property === "transform" && /^((translate[XY]?\(0(px)?\)|scale\(1\))\s*)+$/.test(value)) {
     return "none";
   }
@@ -135,67 +152,7 @@ const stopAnimations = function (target) {
   });
 };
 
-// Restarts a one-shot CSS animation keyed off the presence of a data attribute.
-const replayAttributeAnimation = function (target, attribute) {
-  const element = $(target);
-  element.removeAttr(attribute);
-  void (element[0] && element[0].offsetWidth);
-  element.attr(attribute, "");
-};
-
-// Counts a number up from zero to the value it currently displays. Gives up quietly if something else rewrites the
-// text part way through (e.g. a corrected score being posted), so the newer value always wins.
-const countUp = function (element, duration, delay) {
-  const finalText = element.textContent;
-  const target = parseInt(finalText);
-  if (isNaN(target) || target <= 0) {
-    return Promise.resolve();
-  }
-  return new Promise(function (resolve) {
-    let lastWritten = "0";
-    element.textContent = lastWritten;
-    let startTime = null;
-    let done = false;
-    // Same backstop as animate(): if frames stop, snap straight to the final value on schedule.
-    const backstopId = setTimeout(function () {
-      if (!done && element.textContent === lastWritten) {
-        element.textContent = finalText;
-      }
-      done = true;
-      resolve();
-    }, delay + duration + 250);
-    const step = function (now) {
-      if (done) {
-        return;
-      }
-      if (element.textContent !== lastWritten) {
-        done = true;
-        clearTimeout(backstopId);
-        resolve();
-        return;
-      }
-      if (startTime === null) {
-        startTime = now + delay;
-      }
-      const progress = Math.max(0, Math.min(1, (now - startTime) / duration));
-      // Exponential ease-out, so the digits blur past quickly and then tick slowly into place.
-      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
-      lastWritten = progress === 1 ? finalText : String(Math.round(target * eased));
-      element.textContent = lastWritten;
-      if (progress < 1) {
-        requestAnimationFrame(step);
-      } else {
-        done = true;
-        clearTimeout(backstopId);
-        resolve();
-      }
-    };
-    requestAnimationFrame(step);
-  });
-};
-
-// How much of a point lead saturates the mini momentum glow on the center logo circle. Deliberately smaller than
-// the jumbotron battle meter's threshold, since this compact indicator only needs to read at a glance.
+// How much of a point lead saturates the mini momentum glow on the center logo circle.
 const MINI_MOMENTUM_SATURATION_POINTS = 40;
 
 // Updates the --lean/--intensity custom properties driving the center circle's momentum glow. lean ranges from -1
@@ -209,6 +166,113 @@ const updateMiniMomentum = function (redScore, blueScore) {
     matchCircle.style.setProperty("--lean", lean);
     matchCircle.style.setProperty("--intensity", intensity);
   }
+};
+
+// Rolls a ring of the given color off the match circle.
+const pulseRing = function (color) {
+  const ring = document.getElementById("leadPulse");
+  ring.style.setProperty("--pulse-color", color);
+  ring.animate([
+    {opacity: 0.95, transform: "scale(1)", borderWidth: "8px"},
+    {opacity: 0, transform: "scale(1.9)", borderWidth: "2px"},
+  ], {duration: 900, easing: ease.in});
+};
+
+// The shortest gap between two lead-change rings, so a close match trading the lead back and forth on fuel doesn't
+// strobe the match circle.
+const leadPulseCooldownMs = 5000;
+let lastLeadPulseTime = 0;
+
+// Calls out climbs and foul points as they land during the match, and rolls a ring in an alliance's color off the
+// match circle when it takes the lead. Only runs while the match bar is up; the first update for a match just sets the
+// baseline.
+const animateScoreChanges = function (data, redScore, blueScore) {
+  const previous = lastScores;
+  lastScores = {
+    red: DisplayShared.getCalloutPoints(data.Red.ScoreSummary),
+    blue: DisplayShared.getCalloutPoints(data.Blue.ScoreSummary),
+  };
+  if (previous === null || currentScreen !== "match") {
+    return;
+  }
+  [[redSide, "red"], [blueSide, "blue"]].forEach(function ([side, color]) {
+    $.each(lastScores[color], function (label, points) {
+      scorePopper(side, points - previous[color][label], label);
+    });
+  });
+
+  const leader = redScore > blueScore ? "red" : blueScore > redScore ? "blue" : "";
+  if (leader !== "" && leader !== leadingAlliance && Date.now() - lastLeadPulseTime > leadPulseCooldownMs) {
+    lastLeadPulseTime = Date.now();
+    pulseRing(leader === "red" ? "#ff5571" : "#4da3ff");
+  }
+  if (leader !== "") {
+    leadingAlliance = leader;
+  }
+};
+
+// Works out the period of the match to show on the phase tab: auto, then teleop's transition shift, the four shifts
+// and the endgame. Returns an empty string outside of a running match.
+const getPhaseLabel = function (matchState, countdownSec) {
+  switch (matchState) {
+    case "START_MATCH":
+    case "AUTO_PERIOD":
+    case "PAUSE_PERIOD":
+      return "Auto";
+    case "TELEOP_PERIOD": {
+      if (countdownSec <= matchTiming.EndgameDurationSec) {
+        return "Endgame";
+      }
+      const teleopElapsedSec = getTeleopDurationSec() - countdownSec;
+      if (teleopElapsedSec < matchTiming.TransitionShiftDurationSec) {
+        return "Transition";
+      }
+      const shift = 1 + Math.floor((teleopElapsedSec - matchTiming.TransitionShiftDurationSec) /
+        matchTiming.ShiftDurationSec);
+      return `Shift ${Math.min(shift, 4)}`;
+    }
+    default:
+      return "";
+  }
+};
+
+// Updates the phase tab, swapping the new period in from underneath the old one. The endgame also rolls a gold ring off
+// the match circle.
+const updatePhase = function (label) {
+  if (label === currentPhase) {
+    return;
+  }
+  const previousPhase = currentPhase;
+  currentPhase = label;
+  const tab = $("#phaseTab");
+  tab.attr("data-phase", label.toLowerCase());
+  $("#phaseTabText").text(label);
+  if (!phaseTabShown) {
+    return;
+  }
+  animate(tab, [{opacity: label === "" ? 0 : 1}], 250, ease.move);
+  if (label !== "" && previousPhase !== "") {
+    animate("#phaseTabText", [
+      {opacity: 0, transform: "translateY(100%)"},
+      {opacity: 1, transform: "translateY(0px)"},
+    ], 450, ease.in);
+  }
+  if (label === "Endgame") {
+    pulseRing("#ffd166");
+  }
+};
+
+// Turns the timer red for the last ten seconds of the match, punching it on every tick.
+const updateTimerUrgency = function (matchState, countdownSec) {
+  const urgent = matchState === "TELEOP_PERIOD" && countdownSec <= 10;
+  $("#matchTime").attr("data-urgent", urgent);
+  if (urgent && countdownSec !== lastUrgentSecond && currentScreen === "match") {
+    document.getElementById("matchTime").animate([
+      {transform: "scale(1.35)"},
+      {transform: "scale(1)"},
+    ], {duration: 450, easing: ease.in});
+  }
+  lastUrgentSecond = urgent ? countdownSec : null;
 };
 
 // Handles a websocket message to change which screen is displayed.
@@ -259,12 +323,18 @@ const executeTransitionQueue = async function () {
 const handleMatchLoad = function (data) {
   currentMatch = DisplayShared.handleMatchLoad(data, redSide, blueSide);
   updateMiniMomentum(0, 0);
+  lastScores = null;
+  leadingAlliance = "";
   MatchIntro.build(data, redSide, blueSide, getAvatarUrl);
 };
 
 // Handles a websocket message to update the match time countdown.
 const handleMatchTime = function (data) {
   DisplayShared.handleMatchTime(data);
+  translateMatchTime(data, function (matchState, matchStateText, countdownSec) {
+    updatePhase(getPhaseLabel(matchState, countdownSec));
+    updateTimerUrgency(matchState, countdownSec);
+  });
 };
 
 // Handles a websocket message to update the match score.
@@ -279,6 +349,7 @@ const handleRealtimeScore = function (data) {
   const redScore = data.Red.ScoreSummary.Score - data.Red.ScoreSummary.PostMatchPoints;
   const blueScore = data.Blue.ScoreSummary.Score - data.Blue.ScoreSummary.PostMatchPoints;
   updateMiniMomentum(redScore, blueScore);
+  animateScoreChanges(data, redScore, blueScore);
 };
 
 const setFinalResultIndicator = function (side, label, result) {
@@ -470,17 +541,24 @@ const handleAllianceSelection = function (data) {
     });
     $("#allianceSelection").html(allianceSelectionTemplate({alliances: alliances, numColumns: numColumns}));
 
-    // Flash any cell that just received a pick so the audience's eye lands on it.
+    // Flash any cell that just received a pick so the audience's eye lands on it, and call the pick out at the bottom
+    // of the screen. A batch of several at once is a bulk edit rather than picks happening live, so it isn't called out.
     const cells = $(".selection-cell");
     if (currentScreen === "allianceSelection" && previousPicks.length === cells.length) {
+      const newPicks = [];
       cells.each(function (i) {
-        if (previousPicks[i] === "" && $(this).text().trim() !== "") {
+        const teamId = $(this).text().trim();
+        if (previousPicks[i] === "" && teamId !== "") {
           this.animate([
             {backgroundColor: "rgba(255, 209, 102, 1)", transform: "scale(1.3)", color: "#0b1728"},
             {backgroundColor: "rgba(255, 209, 102, 0)", transform: "scale(1)"},
           ], {duration: 1100, easing: ease.in});
+          newPicks.push({alliance: $(this).closest("tr").index() + 1, isCaptain: $(this).index() === 1, teamId: teamId});
         }
       });
+      if (newPicks.length <= 2) {
+        newPicks.forEach(queuePickCallout);
+      }
     }
   }
   if (rankedTeams) {
@@ -499,6 +577,46 @@ const handleAllianceSelection = function (data) {
   } else {
     $("#allianceSelectionTimer").html("&nbsp;");
   }
+};
+
+// Pick callouts play one after another, so two picks entered close together each get their moment.
+let pickCalloutChain = Promise.resolve();
+
+const queuePickCallout = function (pick) {
+  pickCalloutChain = pickCalloutChain.then(function () {
+    return showPickCallout(pick);
+  });
+};
+
+// Wipes a banner up from the bottom of the screen naming the team that was just picked, holds it, and wipes it away.
+const showPickCallout = async function (pick) {
+  if (currentScreen !== "allianceSelection") {
+    return;
+  }
+  const callout = $("#pickCallout");
+  $("#pickCalloutLabel").text(`Alliance ${pick.alliance} ${pick.isCaptain ? "captain" : "picks"}`);
+  $("#pickCalloutTeam").text(pick.teamId);
+  $("#pickCalloutAvatar").css("visibility", "visible").attr("src", getAvatarUrl(pick.teamId));
+  callout.css("display", "flex");
+  await Promise.all([
+    animate("#pickCalloutBody", [
+      {clipPath: "polygon(0 0, 0 0, 0 100%, 0 100%)"},
+      {clipPath: "polygon(0 0, 100% 0, calc(100% - 28px) 100%, 0 100%)"},
+    ], 500, ease.in),
+    animate("#pickCalloutLabel", [
+      {opacity: 0, transform: "translateY(100%)"},
+      {opacity: 1, transform: "translateY(0px)"},
+    ], 450, ease.in, 200),
+    animate("#pickCalloutTeam", slideIn(-40), 500, ease.in, 150),
+    animate("#pickCalloutAvatar", popIn, 500, ease.pop, 300),
+  ]);
+  await wait(2600);
+  await Promise.all([
+    animate("#pickCalloutLabel", [{opacity: 0}], 200, ease.out),
+    animate("#pickCalloutBody", [{clipPath: "polygon(100% 0, 100% 0, calc(100% - 28px) 100%, calc(100% - 28px) 100%)"}],
+      400, ease.out),
+  ]);
+  callout.hide();
 };
 
 // Handles a websocket message to populate and/or show/hide a lower third.
@@ -529,8 +647,8 @@ const handleLowerThird = function (data) {
       {clipPath: "inset(0 0% 0 0)", transform: "translateX(0px)"},
     ], 800, ease.in);
     animate(lowerThird.children(":visible"), [
-      {opacity: 0, transform: "translateY(10px)", filter: "blur(4px)"},
-      {opacity: 1, transform: "translateY(0px)", filter: "blur(0px)"},
+      {opacity: 0, transform: "translateY(12px)"},
+      {opacity: 1, transform: "translateY(0px)"},
     ], 550, ease.in, 250, 90);
   } else if (!data.ShowLowerThird && lowerThirdVisible) {
     lowerThirdVisible = false;
@@ -550,30 +668,43 @@ const handleLowerThird = function (data) {
 // screen transitions below are just compositions of these with some overlap between them.
 // ---------------------------------------------------------------------------------------------------------------------
 
-// Raises the whole bug into frame while the center circle spins up into place.
+// Raises the whole bug into frame while the center circle pops up into place.
 const riseOverlay = function (delay) {
   return Promise.all([
     animate("#overlayCentering", [overlayCenteringHideParams, overlayCenteringShowParams], 750, ease.in, delay),
     animate("#matchCircle", [
-      {opacity: 0, transform: "scale(0.35) rotate(-140deg)"},
+      {opacity: 0, transform: "scale(0.3)"},
       // Ends on "none" rather than an identity transform so the circle doesn't keep a stacking context, which would pull
       // its momentum glow up in front of the score bar.
       {opacity: 1, transform: "none"},
-    ], 900, ease.in, delay + 60),
+    ], 700, ease.pop, delay + 150),
   ]);
 };
 
-// Drops the bug out of frame, spinning the center circle away as it goes.
+// Drops the bug out of frame, shrinking the center circle away as it goes.
 const sinkOverlay = function () {
   return Promise.all([
-    animate("#matchCircle", [{opacity: 0, transform: "scale(0.5) rotate(120deg)"}], 450, ease.out),
+    animate("#matchCircle", [{opacity: 0, transform: "scale(0.5)"}], 350, ease.out),
     animate("#overlayCentering", [overlayCenteringHideParams], 550, ease.out, 80),
   ]);
 };
 
-// Sweeps a single band of light across the bug; used whenever it opens up into a new layout.
-const playSheen = function () {
-  replayAttributeAnimation("#matchOverlay", "data-sheen");
+// Whether the phase tab is up, which it is whenever the match readouts are.
+let phaseTabShown = false;
+
+// The phase tab slides out from behind the match circle, away from the nearest screen edge.
+const showPhaseTab = function (delay) {
+  phaseTabShown = true;
+  const fromY = overlayCenteringShowParams === overlayCenteringTopShowParams ? -30 : 30;
+  return animate("#phaseTab", [
+    {opacity: 0, transform: `translateY(${fromY}px)`},
+    {opacity: currentPhase === "" ? 0 : 1, transform: "translateY(0px)"},
+  ], 500, ease.in, delay);
+};
+
+const hidePhaseTab = function () {
+  phaseTabShown = false;
+  return animate("#phaseTab", [{opacity: 0}], 200, ease.out);
 };
 
 const openInfoBar = function (delay) {
@@ -603,26 +734,29 @@ const cascadeTeams = function (delay) {
 };
 
 const fadeTeams = function () {
-  return animate(".teams > div", [{opacity: 0, filter: "blur(4px)"}], 250, ease.out);
+  return animate(".teams > div", [{opacity: 0}], 250, ease.out);
 };
 
 const revealMatchReadouts = function (delay) {
   return Promise.all([
-    animate(".score-number", blurIn, 650, ease.in, delay, 90),
-    animate("#matchTime", blurIn, 650, ease.in, delay + 140),
-    animate(".score-fields", blurIn, 650, ease.in, delay + 200),
+    animate(".score-number", riseIn, 600, ease.in, delay, 90),
+    animate("#matchTime", riseIn, 600, ease.in, delay + 140),
+    animate(".score-fields", riseIn, 600, ease.in, delay + 200),
+    showPhaseTab(delay + 250),
     wait(delay).then(hubActiveController.restartPendingHubActiveIndicators),
   ]);
 };
 
 const hideMatchReadouts = function () {
-  return animate(".score-number, #matchTime, .score-fields", blurOut, 260, ease.out);
+  return Promise.all([
+    animate(".score-number, #matchTime, .score-fields", fadeOut, 260, ease.out),
+    hidePhaseTab(),
+  ]);
 };
 
 // Widens the score panels out to their full in-match layout.
 const expandMatch = function (delay) {
   $(".score-fields").css("display", "flex");
-  playSheen();
   return Promise.all([
     animate(".score", [{width: scoreOut}], 750, ease.in, delay),
     animate(".score-fields", [{width: "0px"}, {width: scoreFieldsOut}], 750, ease.in, delay),
@@ -653,10 +787,9 @@ const hideAvatars = function () {
   });
 };
 
-// Opens the pre-match intro: alliance colors, team numbers and avatars, with the border comet orbiting.
+// Opens the pre-match intro: alliance colors, team numbers and avatars.
 const expandIntro = function (delay) {
   $("#matchOverlay").attr("data-mode", "intro");
-  playSheen();
   return Promise.all([
     animate(".score", [{width: scoreMid}], 700, ease.in, delay),
     cascadeTeams(delay + 120),
@@ -672,13 +805,6 @@ const collapseIntro = async function () {
   $(".teams").hide();
 };
 
-const timeoutDetailIn = function (fromX) {
-  return [
-    {opacity: 0, filter: "blur(6px)", transform: `translateX(${fromX}px)`},
-    {opacity: 1, filter: "blur(0px)", transform: "translateX(0px)"},
-  ];
-};
-
 // Unfurls the timeout banner out from behind the center circle, with the break details sliding outward from it.
 const expandTimeout = function (delay) {
   return Promise.all([
@@ -687,14 +813,14 @@ const expandTimeout = function (delay) {
       {width: timeoutDetailsOut, opacity: 1},
     ], 750, ease.in, delay),
     animate("#logo", [{top: logoUp}], 650, ease.move, delay),
-    animate("#timeoutBreakDescription", timeoutDetailIn(40), 600, ease.in, delay + 300),
-    animate("#timeoutNextMatch", timeoutDetailIn(-40), 600, ease.in, delay + 360),
-    animate("#matchTime", blurIn, 650, ease.in, delay + 250),
+    animate("#timeoutBreakDescription", slideIn(40), 600, ease.in, delay + 300),
+    animate("#timeoutNextMatch", slideIn(-40), 600, ease.in, delay + 360),
+    animate("#matchTime", riseIn, 600, ease.in, delay + 250),
   ]);
 };
 
 const collapseTimeout = async function () {
-  await animate(".timeout-detail, #matchTime", blurOut, 260, ease.out);
+  await animate(".timeout-detail, #matchTime", fadeOut, 260, ease.out);
   await Promise.all([
     animate("#timeoutDetails", [{width: timeoutDetailsIn, opacity: 0}], 500, ease.move),
     animate("#logo", [{top: logoDown}], 500, ease.move),
@@ -793,60 +919,89 @@ const transitionTimeoutToIntro = async function () {
 // panels (final score, bracket, sponsors) that sit on top of the backdrop.
 // ---------------------------------------------------------------------------------------------------------------------
 
-const discTransform = function (y, scale, rotation) {
-  return `translateY(${y}px) scale(${scale}) rotate(${rotation}deg)`;
+const discTransform = function (y, scale) {
+  return `translateY(${y}px) scale(${scale})`;
 };
 
-// Spins the disc up out of nothing in the center of the screen.
+// Pops the disc up out of nothing in the center of the screen.
 const showDisc = function (delay) {
   return Promise.all([
     animate("#logoDisc", [
-      {opacity: 0, transform: discTransform(discCenterY, 0.2, -120)},
-      {opacity: 1, transform: discTransform(discCenterY, 1, 0)},
-    ], 950, ease.in, delay),
+      {opacity: 0, transform: discTransform(discCenterY, 0.4)},
+      {opacity: 1, transform: discTransform(discCenterY, 1)},
+    ], 850, ease.pop, delay),
     animate("#blindsLogo", [
-      {opacity: 0, transform: "scale(0.7)", filter: "blur(8px)"},
-      {opacity: 1, transform: "scale(1)", filter: "blur(0px)"},
-    ], 800, ease.in, delay + 200),
+      {opacity: 0, transform: "scale(0.8)"},
+      {opacity: 1, transform: "scale(1)"},
+    ], 700, ease.in, delay + 200),
   ]);
 };
 
 const hideDisc = function (delay) {
   return Promise.all([
-    animate("#blindsLogo", [{opacity: 0, filter: "blur(6px)"}], 250, ease.out, delay),
-    animate("#logoDisc", [{opacity: 0, transform: discTransform(discCenterY, 0.2, 120)}], 500, ease.out, delay + 80),
+    animate("#blindsLogo", [{opacity: 0}], 250, ease.out, delay),
+    animate("#logoDisc", [{opacity: 0, transform: discTransform(discCenterY, 0.6)}], 400, ease.out, delay + 80),
   ]);
 };
 
 // Glides the disc to a new resting place (and back into view, if it had been faded away).
 const moveDisc = function (y, scale, delay = 0) {
-  return animate("#logoDisc", [{opacity: 1, transform: discTransform(y, scale, 0)}], 850, ease.move, delay);
+  return animate("#logoDisc", [{opacity: 1, transform: discTransform(y, scale)}], 850, ease.move, delay);
 };
 
-// Opens the backdrop as an expanding circle, starting from the given radius. A thin shockwave ring rides out ahead
-// of the edge.
+// Opens the backdrop as an expanding circle, starting from the given radius. A thin ring rides out ahead of the edge.
 const openIris = function (delay, fromRadius) {
   return Promise.all([
     animate("#blindsBackdrop", [
-      {clipPath: `circle(${fromRadius} at 50% 50%)`, filter: "brightness(0.5)"},
-      {clipPath: "circle(80vmax at 50% 50%)", filter: "brightness(1)"},
+      {clipPath: `circle(${fromRadius} at 50% 50%)`},
+      {clipPath: "circle(80vmax at 50% 50%)"},
     ], 1200, ease.in, delay),
     animate("#blindsRing", [
-      {opacity: 0.95, transform: "scale(1)"},
+      {opacity: 1, transform: "scale(1)"},
       {opacity: 0, transform: "scale(7)"},
     ], 1300, ease.in, delay),
   ]);
 };
 
 const closeIris = function (delay = 0) {
-  return animate("#blindsBackdrop", [{clipPath: "circle(0px at 50% 50%)", filter: "brightness(0.5)"}], 700,
-    ease.out, delay);
+  return animate("#blindsBackdrop", [{clipPath: "circle(0px at 50% 50%)"}], 700, ease.out, delay);
 };
 
-const revealFinalScore = function () {
+// Once the scores have finished counting, the verdict lands: the losing score steps back as the winning one flashes
+// gold, the badges stamp down and any rank changes tick up or down.
+const settleFinalScore = function () {
+  $(".final-score").attr("data-settled", "");
+  // Not through animate(), which would leave an inline color behind to override the dimming the next time this side
+  // loses.
+  $(".final-score[data-result=winner]").each(function () {
+    this.animate([{color: "#fff"}, {color: "#ffd166", offset: 0.25}, {color: "#fff"}], {duration: 900, easing: ease.move});
+  });
+  return Promise.all([
+    animate(".final-result-indicator, .final-destination", stamp(1.8), 420, "linear", 0, 90),
+    animate("#finalTiebreakReason", [
+      {opacity: 0, transform: "translateY(-12px)"},
+      {opacity: 1, transform: "translateY(0px)"},
+    ], 500, ease.in, 300),
+    animate(".final-team-rank img[src$='rank-up.svg']", [
+      {opacity: 0, transform: "translateY(12px)"},
+      {opacity: 1, transform: "translateY(0px)"},
+    ], 500, ease.pop, 250, 60),
+    animate(".final-team-rank img[src$='rank-down.svg']", [
+      {opacity: 0, transform: "translateY(-12px)"},
+      {opacity: 1, transform: "translateY(0px)"},
+    ], 500, ease.pop, 250, 60),
+  ]);
+};
+
+// The final score card splits open from the middle, and the scores count up under the logo disc while the teams and
+// breakdown fill in around them. Straight after the winner reveal, which has just tallied the scores, they're shown as
+// they are rather than counted again.
+const revealFinalScore = function (afterReveal) {
   const finalScore = $("#finalScore");
   finalScore.show();
-  $(".final-result-indicator, .final-destination").removeAttr("data-shine");
+  $(".final-score").removeAttr("data-settled");
+  // These only come in once the scores have finished counting.
+  $(".final-result-indicator, .final-destination, #finalTiebreakReason, .final-team-rank img").css("opacity", 0);
 
   // Stagger the breakdown row by row, running all three columns in lockstep so each line reads across as a unit.
   const breakdownRows = [];
@@ -860,19 +1015,24 @@ const revealFinalScore = function () {
     ], 550, ease.in, 450, 50));
   });
 
-  const scoreCounts = $(".final-score").toArray().map(function (element) {
-    return countUp(element, 1500, 300);
+  const countMs = afterReveal ? 0 : 1400;
+  const countDelayMs = afterReveal ? 600 : 350;
+  const scoreCounts = afterReveal ? [] : $(".final-score").toArray().map(function (element) {
+    return DisplayEffects.countUp(element, countMs, countDelayMs);
   });
 
   return Promise.all([
+    // The clip would hide the badges hanging off the card's edges, so it's dropped as soon as the card is open.
     animate(finalScore, [
-      {opacity: 0, transform: "translateY(48px) scale(0.96)", filter: "blur(10px)"},
-      {opacity: 1, transform: "translateY(0px) scale(1)", filter: "blur(0px)"},
-    ], 1000, ease.in),
+      {opacity: 1, clipPath: "inset(0% 50% 0% 50%)"},
+      {opacity: 1, clipPath: "inset(0% 0% 0% 0%)"},
+    ], 650, ease.in).then(function () {
+      finalScore.css("clip-path", "");
+    }),
     animate(".final-score", [
-      {opacity: 0, transform: "scale(0.85)"},
-      {opacity: 1, transform: "scale(1)"},
-    ], 900, ease.in, 200),
+      {opacity: 0, transform: "translateY(24px)"},
+      {opacity: 1, transform: "translateY(0px)"},
+    ], 600, ease.in, 200),
     animate(".final-teams.reversible-left .final-team-row", slideIn(-24), 600, ease.in, 400, 70),
     animate(".final-teams.reversible-right .final-team-row", slideIn(24), 600, ease.in, 400, 70),
     animate(".final-alliance", [{opacity: 0}, {opacity: 1}], 600, ease.in, 350),
@@ -882,37 +1042,27 @@ const revealFinalScore = function () {
     ], 600, ease.in, 700, 100),
     ...breakdownRows,
     ...scoreCounts,
-    // The verdict lands last, once the numbers have finished counting.
-    animate(".final-result-indicator, .final-destination", [
-      {opacity: 0, transform: "translateY(28px) scale(0.7)"},
-      {opacity: 1, transform: "translateY(0px) scale(1)"},
-    ], 700, ease.pop, 1500, 80).then(function () {
-      $(".final-result-indicator, .final-destination").attr("data-shine", "");
-    }),
-    animate("#finalTiebreakReason", [
-      {opacity: 0, transform: "translateY(-12px)"},
-      {opacity: 1, transform: "translateY(0px)"},
-    ], 600, ease.in, 1750),
+    wait(countDelayMs + countMs).then(settleFinalScore),
   ]);
 };
 
 const hideFinalScore = function () {
-  return animate("#finalScore", [{opacity: 0, transform: "translateY(28px) scale(0.97)", filter: "blur(8px)"}], 450,
-    ease.out).then(function () {
-    $("#finalScore").hide();
-  });
+  return animate("#finalScore", [{opacity: 0, transform: "translateY(28px) scale(0.97)"}], 450, ease.out)
+    .then(function () {
+      $("#finalScore").hide();
+    });
 };
 
 const revealBracket = function (delay) {
   $("#bracket").show();
   return animate("#bracket", [
-    {opacity: 0, transform: "scale(1.05)", filter: "blur(10px)"},
-    {opacity: 1, transform: "scale(1)", filter: "blur(0px)"},
-  ], 950, ease.in, delay);
+    {opacity: 0, transform: "scale(1.04)"},
+    {opacity: 1, transform: "scale(1)"},
+  ], 800, ease.in, delay);
 };
 
 const hideBracket = function () {
-  return animate("#bracket", [{opacity: 0, transform: "scale(0.97)", filter: "blur(8px)"}], 450, ease.out)
+  return animate("#bracket", [{opacity: 0, transform: "scale(0.97)"}], 450, ease.out)
     .then(function () {
       $("#bracket").hide();
     });
@@ -939,7 +1089,7 @@ const presentFinalScore = async function () {
   if (revealData !== null) {
     await WinnerReveal.play(revealData, redSide);
   }
-  await revealFinalScore();
+  await revealFinalScore(revealData !== null);
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1001,7 +1151,7 @@ const transitionScoreToBracket = async function () {
 const transitionLogoToSponsor = function () {
   $("#sponsor").show();
   return Promise.all([
-    animate("#logoDisc", [{opacity: 0, transform: discTransform(discCenterY, 0.85, 0)}], 450, ease.out),
+    animate("#logoDisc", [{opacity: 0, transform: discTransform(discCenterY, 0.85)}], 450, ease.out),
     animate("#sponsor", [
       {opacity: 1, transform: "translateY(0px) scale(1)", clipPath: `circle(${discRadius} at 50% 50%)`},
       {opacity: 1, transform: "translateY(0px) scale(1)", clipPath: "circle(620px at 50% 50%)"},
@@ -1013,7 +1163,7 @@ const transitionLogoToSponsor = function () {
 const transitionSponsorToLogo = async function () {
   await Promise.all([
     animate("#sponsor", [{opacity: 0, clipPath: `circle(${discRadius} at 50% 50%)`}], 650, ease.move),
-    animate("#logoDisc", [{opacity: 1, transform: discTransform(discCenterY, 1, 0)}], 650, ease.in, 300),
+    animate("#logoDisc", [{opacity: 1, transform: discTransform(discCenterY, 1)}], 650, ease.in, 300),
   ]);
   $("#sponsor").hide();
 };
@@ -1103,11 +1253,8 @@ const transitionBlankToAllianceSelection = function () {
 
 const transitionAllianceSelectionToBlank = async function () {
   await Promise.all([
-    animate("#allianceSelectionCentering", [{opacity: 0, filter: "blur(8px)", transform: "translateX(70px)"}], 450,
-      ease.out),
-    animate("#allianceRankingsCentering.enabled", [
-      {opacity: 0, filter: "blur(8px)", transform: "translateX(-70px)"},
-    ], 450, ease.out),
+    animate("#allianceSelectionCentering", [{opacity: 0, transform: "translateX(70px)"}], 450, ease.out),
+    animate("#allianceRankingsCentering.enabled", [{opacity: 0, transform: "translateX(-70px)"}], 450, ease.out),
   ]);
   $("#allianceSelectionCentering, #allianceRankingsCentering").hide();
 };
@@ -1179,7 +1326,11 @@ $(function () {
   const sides = DisplayShared.applyDisplaySides(urlParams);
   redSide = sides.redSide;
   blueSide = sides.blueSide;
-  if (urlParams.get("overlayLocation") === "top") {
+  // Lets the stylesheet color things that aren't themselves reversible (like the team columns' edges) by side.
+  $("body").attr("data-reversed", urlParams.get("reversed") === "true");
+  const overlayAtTop = urlParams.get("overlayLocation") === "top";
+  $("body").attr("data-overlay-location", overlayAtTop ? "top" : "bottom");
+  if (overlayAtTop) {
     overlayCenteringHideParams = overlayCenteringTopHideParams;
     overlayCenteringShowParams = overlayCenteringTopShowParams;
     $("#overlayCentering").css("top", overlayCenteringTopUp);
@@ -1187,6 +1338,8 @@ $(function () {
     overlayCenteringHideParams = overlayCenteringBottomHideParams;
     overlayCenteringShowParams = overlayCenteringBottomShowParams;
   }
+  // Score chips drift away from whichever screen edge the bar is on.
+  scorePopper = DisplayShared.createScorePopper(overlayAtTop);
 
   // Set up the websocket back to the server.
   websocket = new CheesyWebsocket("/displays/audience/websocket", {

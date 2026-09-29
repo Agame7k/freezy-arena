@@ -1,17 +1,18 @@
 // Copyright 2026 Team 254. All Rights Reserved.
 //
 // Full-screen match intro shared by the audience and wall displays: the two alliances slam in from either side and
-// meet at a diagonal seam, "VS" lands with a flash and a burst of particles, and each team's card slides in with its
-// number scrambling into place. It holds there as its own screen until the operator moves on, at which point the sides
-// split apart to uncover whatever comes next. The same stage can instead show a match's final result, with each side's
-// score, the winner and any cards.
+// meet at a diagonal seam, "VS" stamps down in a shower of sparks off the seam, and each team's card slides in. It
+// holds there as its own screen until the operator moves on, at which point the sides split apart to uncover whatever
+// comes next. The same stage can instead show a match's final result, with each side's score, the winner and any
+// cards.
 
 (function (window) {
   const easeIn = "cubic-bezier(0.16, 1, 0.3, 1)";
   const easeOut = "cubic-bezier(0.7, 0, 0.84, 0)";
   const easeMove = "cubic-bezier(0.65, 0, 0.35, 1)";
   const easeSlam = "cubic-bezier(0.5, 0, 0.75, 0)";
-  const particleColors = ["#ff5571", "#4da3ff", "#ffd166", "#ffffff"];
+  const easeStampIn = "cubic-bezier(0.55, 0, 1, 0.45)";
+  const easePop = "cubic-bezier(0.34, 1.56, 0.64, 1)";
   const cardSeverity = {"": 0, "yellow": 1, "red": 2, "dq": 3};
   const cardLabels = {yellow: "Yellow card", red: "Red card", dq: "Disqualified"};
 
@@ -26,6 +27,8 @@
   // intro can never stall a display's transition queue.
   const animate = function (target, keyframes, duration, easing, delay = 0, stagger = 0) {
     const finalFrame = {...keyframes[keyframes.length - 1]};
+    delete finalFrame.offset;
+    delete finalFrame.easing;
     return Promise.all($(target).toArray().map(function (element, i) {
       const totalDelay = delay + i * stagger;
       const animation = element.animate(keyframes, {duration, easing, delay: totalDelay, fill: "both"});
@@ -46,105 +49,9 @@
 
   const slideIn = function (fromX) {
     return [
-      {opacity: 0, filter: "blur(6px)", transform: `translateX(${fromX}px)`},
-      {opacity: 1, filter: "none", transform: "none"},
+      {opacity: 0, transform: `translateX(${fromX}px)`},
+      {opacity: 1, transform: "none"},
     ];
-  };
-
-  // Cycles random digits through each character of the element's number before settling each one, left to right.
-  const scrambleNumber = function (element, delay, duration) {
-    const text = String(element.dataset.number);
-    const start = Date.now() + delay;
-    const intervalId = setInterval(function () {
-      const elapsed = Date.now() - start;
-      if (elapsed < 0) {
-        return;
-      }
-      const settled = Math.floor((elapsed / duration) * text.length);
-      if (settled >= text.length) {
-        element.textContent = text;
-        clearInterval(intervalId);
-        return;
-      }
-      let scrambled = text.slice(0, settled);
-      for (let i = settled; i < text.length; i++) {
-        scrambled += Math.floor(Math.random() * 10);
-      }
-      element.textContent = scrambled;
-    }, 45);
-  };
-
-  // A burst of spinning outlined shapes flying out from the center of the screen.
-  const burstParticles = function (canvas) {
-    const ratio = window.devicePixelRatio || 1;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    canvas.width = width * ratio;
-    canvas.height = height * ratio;
-    const context = canvas.getContext("2d");
-    context.scale(ratio, ratio);
-
-    const particles = [];
-    for (let i = 0; i < 160; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 6 + Math.random() * 18;
-      particles.push({
-        x: width / 2 + Math.cos(angle) * 150,
-        y: height / 2 + Math.sin(angle) * 150,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size: 3 + Math.random() * 10,
-        rotation: Math.random() * Math.PI,
-        spin: (Math.random() - 0.5) * 0.3,
-        sides: Math.random() < 0.5 ? 3 : 4,
-        filled: Math.random() < 0.3,
-        color: particleColors[i % particleColors.length],
-        life: 1,
-        decay: 0.008 + Math.random() * 0.014,
-      });
-    }
-
-    const drawFrame = function () {
-      context.clearRect(0, 0, width, height);
-      let alive = false;
-      particles.forEach(function (particle) {
-        particle.x += particle.vx;
-        particle.y += particle.vy;
-        particle.vx *= 0.94;
-        particle.vy *= 0.94;
-        particle.rotation += particle.spin;
-        particle.life -= particle.decay;
-        if (particle.life <= 0) {
-          return;
-        }
-        alive = true;
-        context.save();
-        context.globalAlpha = particle.life;
-        context.translate(particle.x, particle.y);
-        context.rotate(particle.rotation);
-        context.beginPath();
-        for (let side = 0; side < particle.sides; side++) {
-          const pointAngle = (side / particle.sides) * Math.PI * 2;
-          context.lineTo(Math.cos(pointAngle) * particle.size, Math.sin(pointAngle) * particle.size);
-        }
-        context.closePath();
-        if (particle.filled) {
-          context.fillStyle = particle.color;
-          context.fill();
-        } else {
-          context.strokeStyle = particle.color;
-          context.lineWidth = 1.5;
-          context.stroke();
-        }
-        context.restore();
-      });
-      if (alive) {
-        requestAnimationFrame(drawFrame);
-      } else {
-        context.clearRect(0, 0, width, height);
-      }
-    };
-    requestAnimationFrame(drawFrame);
   };
 
   // Builds the intro's markup once and appends it to the page.
@@ -159,7 +66,7 @@
         .append(`<div class='match-intro-teams' id='matchIntro${side}Teams'></div>`)
         .appendTo(intro);
     });
-    intro.append("<div id='matchIntroSeam'></div>");
+    intro.append("<div id='matchIntroSeam'><div class='match-intro-seam-line'></div></div>");
     intro.append("<canvas id='matchIntroParticles'></canvas>");
     intro.append($("<div id='matchIntroEvent'>").text($("#eventMatchInfo > span").first().text()));
     intro.append("<div id='matchIntroVs'>VS</div>");
@@ -375,25 +282,28 @@
         animate("#matchIntroRight", [{transform: "translateX(105%)"}, {transform: "translateX(0%)"}], 550, easeSlam),
       ]);
 
-      // Impact: flash, shake, seam and "VS", with a burst of particles in both alliance colors.
+      // Impact: a flash and a jolt, the seam lights up throwing sparks, and "VS" stamps down on top of it.
       if (sound.slam) {
         sound.slam();
       }
-      burstParticles(document.getElementById("matchIntroParticles"));
+      DisplayEffects.sparks(document.getElementById("matchIntroParticles"), {
+        seamX: window.innerWidth / 2, halfSkew: window.innerHeight * 0.07, count: 200, power: 1.2,
+      });
       document.getElementById("matchIntro").animate([
-        {transform: "translate(18px, -6px)"},
-        {transform: "translate(-14px, 5px)"},
-        {transform: "translate(9px, -3px)"},
-        {transform: "translate(-5px, 2px)"},
+        {transform: "translate(14px, -5px)"},
+        {transform: "translate(-11px, 4px)"},
+        {transform: "translate(7px, -2px)"},
+        {transform: "translate(-4px, 2px)"},
         {transform: "translate(0px, 0px)"},
-      ], {duration: 420, easing: "linear"});
-      animate("#matchIntroFlash", [{opacity: 0.9}, {opacity: 0}], 550, easeIn);
-      animate("#matchIntroSeam", [{opacity: 0, transform: "scaleY(0)"}, {opacity: 1, transform: "scaleY(1)"}], 500,
-        easeIn);
+      ], {duration: 380, easing: "linear"});
+      animate("#matchIntroFlash", [{opacity: 0.8}, {opacity: 0}], 500, easeIn);
+      animate("#matchIntroSeam", [{opacity: 1, clipPath: "inset(0% 0% 100% 0%)"}, {opacity: 1, clipPath: "inset(0%)"}],
+        260, easeIn);
       animate("#matchIntroVs", [
-        {opacity: 0, transform: "translate(-50%, -50%) scale(3.2) rotate(-8deg)", filter: "blur(24px)"},
-        {opacity: 1, transform: "translate(-50%, -50%)", filter: "none"},
-      ], 600, easeIn);
+        {opacity: 0, transform: "translate(-50%, -50%) scale(2.6)", easing: easeStampIn},
+        {opacity: 1, transform: "translate(-50%, -50%) scale(0.94)", offset: 0.6, easing: easeIn},
+        {opacity: 1, transform: "translate(-50%, -50%)"},
+      ], 480, "linear");
       animate("#matchIntroEvent", [
         {opacity: 0, transform: "translate(-50%, -4vh)"},
         {opacity: 1, transform: "translate(-50%, 0px)"},
@@ -402,35 +312,35 @@
         {opacity: 0, transform: "translate(-50%, 4vh)"},
         {opacity: 1, transform: "translate(-50%, 0px)"},
       ], 650, easeIn, 350);
-      animate(".match-intro-alliance", [
-        {opacity: 0, letterSpacing: "0.9em"},
-        {opacity: 1, letterSpacing: "0.3em"},
-      ], 800, easeIn, 200);
+      animate("#matchIntroLeft .match-intro-alliance", slideIn(-50), 600, easeIn, 200);
+      animate("#matchIntroRight .match-intro-alliance", slideIn(50), 600, easeIn, 200);
       animate(".match-intro-destination", [{opacity: 0}, {opacity: 1}], 600, easeIn, 500);
-      $(".match-intro-score").each(function () {
-        scrambleNumber(this, 150, 900);
-      });
       animate(".match-intro-score", [
-        {opacity: 0, transform: "scale(1.8)", filter: "blur(12px)"},
-        {opacity: 1, transform: "none", filter: "none"},
-      ], 700, easeIn, 100);
-
-      // Team cards glide in from each outer edge in turn, their numbers scrambling into place as they land.
-      $(".match-intro-team").each(function () {
-        scrambleNumber($(this).find(".match-intro-number")[0], 350 + $(this).index() * 140, 800);
+        {opacity: 0, transform: "translateY(3vh)"},
+        {opacity: 1, transform: "none"},
+      ], 500, easeIn, 100);
+      $(".match-intro-score").each(function () {
+        DisplayEffects.countUp(this, 1100, 150);
       });
+
+      // Team cards glide in from each outer edge in turn, each avatar popping up just after its number lands.
       await Promise.all([
-        animate("#matchIntroLeft .match-intro-team", slideIn(-90), 700, easeIn, 350, 140),
-        animate("#matchIntroRight .match-intro-team", slideIn(90), 700, easeIn, 350, 140),
+        animate("#matchIntroLeft .match-intro-team", slideIn(-90), 650, easeIn, 350, 140),
+        animate("#matchIntroRight .match-intro-team", slideIn(90), 650, easeIn, 350, 140),
+        animate(".match-intro-avatar", [
+          {transform: "scale(0.3)"},
+          {transform: "none"},
+        ], 500, easePop, 450, 70),
         // Any yellow cards flip in once their teams have landed.
         animate(".match-intro-yellow-card", [
           {opacity: 0, transform: "rotate(-10deg) rotateY(90deg) scale(1.8)"},
           {opacity: 1, transform: "rotate(-10deg)"},
         ], 550, easeIn, 1100, 120),
         animate(".match-intro-verdict, .match-intro-card-pill", [
-          {opacity: 0, transform: "scale(0.4)"},
+          {opacity: 0, transform: "scale(1.8)", easing: easeStampIn},
+          {opacity: 1, transform: "scale(0.95)", offset: 0.6, easing: easeIn},
           {opacity: 1, transform: "none"},
-        ], 600, easeIn, 1000, 120),
+        ], 450, "linear", 1250, 120),
       ]);
     },
 
@@ -446,8 +356,7 @@
       );
       await Promise.all([
         animate("#matchIntroVs", [
-          {opacity: 0, transform: `translate(-50%, calc(-50% + ${diveUp ? "-38vh" : "38vh"})) scale(0.25)`,
-            filter: "blur(6px)"},
+          {opacity: 0, transform: `translate(-50%, calc(-50% + ${diveUp ? "-38vh" : "38vh"})) scale(0.25)`},
         ], 550, easeOut, 100),
         animate("#matchIntroLeft", [{transform: "translateX(-105%)"}], 750, easeMove, 150),
         animate("#matchIntroRight", [{transform: "translateX(105%)"}], 750, easeMove, 150),
