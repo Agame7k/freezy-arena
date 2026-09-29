@@ -135,8 +135,8 @@ func (monitor *ftaMonitor) update(
 					if state.occurrences[eventType] > limit {
 						return
 					}
-					if state.occurrences[eventType] == limit {
-						event.Message += " (repeats this match won't be logged)"
+					if limit > 1 && state.occurrences[eventType] == limit {
+						event.Message += "; further repeats not logged"
 					}
 				}
 			}

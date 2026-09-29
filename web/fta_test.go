@@ -24,7 +24,7 @@ func TestFtaConsole(t *testing.T) {
 		assert.Contains(t, body, `id="station`+station+`"`)
 	}
 	for _, tag := range model.FtaNoteTags {
-		assert.Contains(t, body, `data-tag="`+tag+`"`)
+		assert.Contains(t, body, `<option value="`+tag+`">`)
 	}
 }
 

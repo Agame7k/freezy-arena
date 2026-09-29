@@ -25,7 +25,7 @@ func flagTypes(status FtaStationStatus) []model.FtaEventType {
 }
 
 func TestFtaStationStatusEmptyStation(t *testing.T) {
-	status := getFtaStationStatus(&AllianceStation{}, false, true)
+	status := getFtaStationStatus(&AllianceStation{}, PreMatch, true)
 	assert.True(t, status.Ready)
 	assert.Empty(t, status.Checks)
 	assert.Empty(t, status.Flags)
@@ -96,7 +96,7 @@ func TestFtaStationStatusChecklist(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			status := getFtaStationStatus(&testCase.station, false, true)
+			status := getFtaStationStatus(&testCase.station, PreMatch, true)
 			assert.Equal(t, testCase.expectedReady, status.Ready)
 			failing := []string{}
 			for _, check := range status.Checks {
@@ -111,8 +111,8 @@ func TestFtaStationStatusChecklist(t *testing.T) {
 
 func TestFtaStationStatusOmitsEthernetWithoutPlc(t *testing.T) {
 	station := AllianceStation{Team: &model.Team{Id: 254}, aStopReset: true}
-	assert.Contains(t, checksByName(getFtaStationStatus(&station, false, true)), "Ethernet")
-	assert.NotContains(t, checksByName(getFtaStationStatus(&station, false, false)), "Ethernet")
+	assert.Contains(t, checksByName(getFtaStationStatus(&station, PreMatch, true)), "Ethernet")
+	assert.NotContains(t, checksByName(getFtaStationStatus(&station, PreMatch, false)), "Ethernet")
 }
 
 func TestFtaStationStatusFlags(t *testing.T) {
@@ -127,54 +127,55 @@ func TestFtaStationStatusFlags(t *testing.T) {
 		}
 	}
 	testCases := []struct {
-		name         string
-		station      AllianceStation
-		matchRunning bool
-		expected     []model.FtaEventType
+		name       string
+		station    AllianceStation
+		matchState MatchState
+		expected   []model.FtaEventType
 	}{
-		{"healthy", AllianceStation{DsConn: connected(12.5, 5)}, true, []model.FtaEventType{}},
+		{"healthy", AllianceStation{DsConn: connected(12.5, 5)}, TeleopPeriod, []model.FtaEventType{}},
 		{
 			"low battery in match",
 			AllianceStation{DsConn: connected(7.2, 5)},
-			true,
+			TeleopPeriod,
 			[]model.FtaEventType{model.FtaEventLowBattery},
 		},
 		{
 			"brownout in match",
 			AllianceStation{DsConn: connected(6.5, 5)},
-			true,
+			AutoPeriod,
 			[]model.FtaEventType{model.FtaEventBrownout},
 		},
 		{
 			"tired battery pre-match",
 			AllianceStation{DsConn: connected(11.9, 5)},
-			false,
+			PreMatch,
 			[]model.FtaEventType{model.FtaEventLowBattery},
 		},
+		{"drained battery post-match", AllianceStation{DsConn: connected(11.2, 5)}, PostMatch, []model.FtaEventType{}},
 		{
 			"high trip time",
 			AllianceStation{DsConn: connected(12.5, 25)},
-			true,
+			TeleopPeriod,
 			[]model.FtaEventType{model.FtaEventHighTripTime},
 		},
-		{"no DS in match", AllianceStation{}, true, []model.FtaEventType{model.FtaEventDsLost}},
-		{"no DS pre-match", AllianceStation{}, false, []model.FtaEventType{}},
+		{"no DS in match", AllianceStation{}, TeleopPeriod, []model.FtaEventType{model.FtaEventDsLost}},
+		{"no DS pre-match", AllianceStation{}, PreMatch, []model.FtaEventType{}},
 		{
 			"robot lost in match",
 			AllianceStation{DsConn: &DriverStationConnection{DsLinked: true, RadioLinked: true}},
-			true,
+			PausePeriod,
 			[]model.FtaEventType{model.FtaEventRobotLost},
 		},
 		{
 			"stops and bypass",
 			AllianceStation{EStop: true, AStop: true, Bypass: true},
-			true,
+			TeleopPeriod,
 			[]model.FtaEventType{model.FtaEventEStop, model.FtaEventAStop, model.FtaEventBypass},
 		},
 		{
 			"wrong station",
 			AllianceStation{DsConn: &DriverStationConnection{WrongStation: "R3"}},
-			false,
+			PreMatch,
 			[]model.FtaEventType{model.FtaEventWrongStation},
 		},
 	}
@@ -182,7 +183,7 @@ func TestFtaStationStatusFlags(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			testCase.station.Team = &model.Team{Id: 254}
-			status := getFtaStationStatus(&testCase.station, testCase.matchRunning, true)
+			status := getFtaStationStatus(&testCase.station, testCase.matchState, true)
 			assert.Equal(t, testCase.expected, flagTypes(status))
 		})
 	}

@@ -105,8 +105,17 @@ func (web *Web) getFtaWatchlist() (*ftaWatchlist, error) {
 		notesByTeam[note.TeamId] = append(notesByTeam[note.TeamId], note)
 	}
 
+	// HasConnected is only saved when a match starts, so also count a team whose robot is linked right now.
+	linkedNow := make(map[int]bool)
+	for _, allianceStation := range web.arena.AllianceStations {
+		if allianceStation.Team != nil && allianceStation.DsConn != nil && allianceStation.DsConn.RobotLinked {
+			linkedNow[allianceStation.Team.Id] = true
+		}
+	}
+
 	summaries := make([]ftaTeamSummary, 0, len(teams))
 	for _, team := range teams {
+		team.HasConnected = team.HasConnected || linkedNow[team.Id]
 		summaries = append(summaries, summarizeFtaTeam(team, statsByTeam[team.Id], notesByTeam[team.Id]))
 	}
 	sort.SliceStable(summaries, func(i, j int) bool {
@@ -184,7 +193,7 @@ func summarizeFtaTeam(team model.Team, stats []model.FtaTeamMatchStats, notes []
 	}
 
 	if !team.HasConnected {
-		addReason(model.FtaSeverityBad, "Hasn't connected to the field yet")
+		addReason(model.FtaSeverityBad, "Never connected")
 	}
 
 	// Test matches are left out since they're often used to deliberately pull cables and power.

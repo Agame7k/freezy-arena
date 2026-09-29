@@ -59,12 +59,13 @@ type StartMatchBlocker struct {
 
 // Returns the readiness checklist and live flags for the given station. The Ethernet check is only included when the PLC
 // is enabled, since that is the only way to know whether the driver station cable is plugged in.
-func getFtaStationStatus(allianceStation *AllianceStation, matchRunning, plcEnabled bool) FtaStationStatus {
+func getFtaStationStatus(allianceStation *AllianceStation, matchState MatchState, plcEnabled bool) FtaStationStatus {
 	status := FtaStationStatus{Checks: []FtaCheck{}, Flags: []FtaFlag{}, Ready: true}
 	if allianceStation.Team == nil {
 		return status
 	}
 	dsConn := allianceStation.DsConn
+	matchRunning := matchState == AutoPeriod || matchState == PausePeriod || matchState == TeleopPeriod
 
 	if allianceStation.EStop {
 		status.Flags = append(
@@ -117,12 +118,11 @@ func getFtaStationStatus(allianceStation *AllianceStation, matchRunning, plcEnab
 					FtaFlag{model.FtaEventLowBattery, model.FtaSeverityWarn, fmt.Sprintf("Low battery %.1fV", voltage)},
 				)
 			}
-		} else if voltage < ftaPreMatchBatteryVolts {
+		} else if matchState == PreMatch && voltage < ftaPreMatchBatteryVolts {
+			// Only worth flagging before the match; afterwards every battery is drained.
 			status.Flags = append(
 				status.Flags,
-				FtaFlag{
-					model.FtaEventLowBattery, model.FtaSeverityWarn, fmt.Sprintf("Battery only %.1fV", voltage),
-				},
+				FtaFlag{model.FtaEventLowBattery, model.FtaSeverityWarn, fmt.Sprintf("Battery %.1fV", voltage)},
 			)
 		}
 	}
@@ -197,10 +197,9 @@ func robotLostMessage(dsConn *DriverStationConnection) string {
 // Returns the FTA status of every station, keyed by station ID.
 func (arena *Arena) getFtaStationStatuses() map[string]FtaStationStatus {
 	statuses := make(map[string]FtaStationStatus, len(arena.AllianceStations))
-	matchRunning := arena.isMatchRunning()
 	plcEnabled := arena.Plc.IsEnabled()
 	for station, allianceStation := range arena.AllianceStations {
-		statuses[station] = getFtaStationStatus(allianceStation, matchRunning, plcEnabled)
+		statuses[station] = getFtaStationStatus(allianceStation, arena.MatchState, plcEnabled)
 	}
 	return statuses
 }
@@ -219,7 +218,7 @@ func (arena *Arena) getStartMatchBlockers() []StartMatchBlocker {
 			StartMatchBlocker{
 				Code:    "matchInProgress",
 				Message: "a match is still in progress or has results pending",
-				Hint:    "Commit or discard the previous match in Match Play, then load the next match.",
+				Hint:    "Commit or discard it in Match Play, then load the next match.",
 			},
 		)
 	}
@@ -233,7 +232,7 @@ func (arena *Arena) getStartMatchBlockers() []StartMatchBlocker {
 				StartMatchBlocker{
 					Code:    "plcUnhealthy",
 					Message: "PLC is not healthy",
-					Hint:    "Check the PLC's power and network connection, and its address in Settings.",
+					Hint:    "Check PLC power and network, and its address in Settings.",
 				},
 			)
 		}
@@ -243,7 +242,7 @@ func (arena *Arena) getStartMatchBlockers() []StartMatchBlocker {
 				StartMatchBlocker{
 					Code:    "fieldEStop",
 					Message: "field emergency stop is active",
-					Hint:    "Release the field E-stop at the scoring table once the field is safe.",
+					Hint:    "Release the field E-stop once the field is safe.",
 				},
 			)
 		}
@@ -253,7 +252,7 @@ func (arena *Arena) getStartMatchBlockers() []StartMatchBlocker {
 				StartMatchBlocker{
 					Code:    "ftaNotReady",
 					Message: "FTA ready switch is not active",
-					Hint:    "Turn the FTA ready switch on once the field is clear and robots are set.",
+					Hint:    "Turn on the FTA ready switch once the field is clear.",
 				},
 			)
 		}
@@ -270,7 +269,7 @@ func (arena *Arena) getStartMatchBlockers() []StartMatchBlocker {
 				StartMatchBlocker{
 					Code:    "armorBlockDisconnected",
 					Message: fmt.Sprintf("PLC ArmorBlock %q is not connected", name),
-					Hint:    "Check the ArmorBlock's network cable and power.",
+					Hint:    "Check its network cable and power.",
 				},
 			)
 		}
@@ -304,7 +303,7 @@ func (arena *Arena) getAllianceStationStartBlockers(stations ...string) []StartM
 				Code:     "eStop",
 				Message:  fmt.Sprintf("an emergency stop is active (%s)", strings.Join(eStoppedStations, ", ")),
 				Stations: eStoppedStations,
-				Hint:     "Release the station E-stop button; it stays latched until the match is over.",
+				Hint:     "Release the station E-stop button.",
 			},
 		)
 	}
@@ -318,7 +317,7 @@ func (arena *Arena) getAllianceStationStartBlockers(stations ...string) []StartM
 					strings.Join(aStopNotResetStations, ", "),
 				),
 				Stations: aStopNotResetStations,
-				Hint:     "Have the team press and release the A-stop button to show it works.",
+				Hint:     "Have the team press and release the A-stop to show it works.",
 			},
 		)
 	}
@@ -331,7 +330,7 @@ func (arena *Arena) getAllianceStationStartBlockers(stations ...string) []StartM
 					"not all robots are connected or bypassed (%s)", strings.Join(disconnectedStations, ", "),
 				),
 				Stations: disconnectedStations,
-				Hint:     "Tap the station to see which link is missing, or bypass it if the team is a no-show.",
+				Hint:     "Open the station to see which link is missing, or bypass a no-show.",
 			},
 		)
 	}

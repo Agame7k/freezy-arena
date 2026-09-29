@@ -285,7 +285,7 @@ func TestFtaMonitorRepeatedFaultsAreOnlyLoggedOncePerMatch(t *testing.T) {
 	}
 	if assert.Len(t, logged, 1) {
 		assert.Equal(t, model.FtaEventBrownout, logged[0].Type)
-		assert.Equal(t, "Brownout: battery at 6.2V (repeats this match won't be logged)", logged[0].Message)
+		assert.Equal(t, "Brownout: battery at 6.2V", logged[0].Message)
 	}
 
 	// Robot drops are logged a few times (with their restores), then go quiet.
@@ -310,6 +310,7 @@ func TestFtaMonitorRepeatedFaultsAreOnlyLoggedOncePerMatch(t *testing.T) {
 		},
 		eventTypes(logged),
 	)
+	assert.Equal(t, "Robot link lost: No robot code (roboRIO up); further repeats not logged", logged[4].Message)
 
 	// Repeats are still counted in the match stats.
 	arena.MatchState = PostMatch

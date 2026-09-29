@@ -88,8 +88,9 @@ func (web *Web) ftaHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	data := struct {
 		*model.EventSettings
-		NoteTags []string
-	}{web.arena.EventSettings, model.FtaNoteTags}
+		NoteTags           []string
+		UpcomingMatchCount int
+	}{web.arena.EventSettings, model.FtaNoteTags, ftaUpcomingMatchCount}
 	err = template.ExecuteTemplate(w, "fta.html", data)
 	if err != nil {
 		handleWebErr(w, err)

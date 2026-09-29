@@ -12,22 +12,19 @@ let matchTimeRemainingSec;
 const lowBatteryThreshold = 8;
 const highBtuThreshold = 7.0;
 
-// FTA mode shows a readiness strip; faults are logged by the server and shown on the FTA console.
 let isFtaMode = false;
 const matchStateStartMatch = 1;
 const matchStatePostMatch = 5;
 
-// Briefly flashes an element to draw the eye to a status that just went bad, so a mid-match disconnect or E-stop
-// is impossible to miss without permanently blinking for as long as it stays bad.
+// Briefly flashes an element whose status just went bad.
 const flashFault = function (element) {
   element.removeClass("fault-flash");
-  void element[0].offsetWidth; // Force a reflow so the animation can be retriggered.
+  void element[0].offsetWidth; // Force a reflow so that the animation restarts.
   element.addClass("fault-flash");
 };
 
-// Sets data-status-ok on an element, flashing it if this is a transition from a previously-known-good state into a
-// bad one. Doesn't flash on the very first update (e.g. nothing being connected yet before a match starts), since
-// that's not a fault -- only an actual working connection dropping counts.
+// Sets data-status-ok on an element, flashing it only if it was previously good (so nothing flashes before the
+// robots have connected in the first place).
 const setStatusOk = function (element, ok) {
   const isGoodNow = ok === true || ok === "true";
   const wasGood = element.attr("data-last-ok") === "true";
@@ -336,7 +333,7 @@ const editFtaNotes = function (element) {
   });
 };
 
-// Shows whether the match can be started and, if not, exactly what is blocking it.
+// Shows whether the match can be started and, if not, what is blocking it.
 const updateReadiness = function (data) {
   const readiness = $("#ftaReadiness");
   const text = $("#ftaReadinessText");
@@ -345,13 +342,13 @@ const updateReadiness = function (data) {
     text.text("Match in progress");
   } else if (data.MatchState === matchStatePostMatch) {
     readiness.attr("data-state", "running");
-    text.text("Post-match — see the FTA console for this match's faults");
+    text.text("Post-match");
   } else if (data.CanStartMatch) {
     readiness.attr("data-state", "ready");
-    text.text("✔ Ready to start");
+    text.text("Ready to start");
   } else {
     readiness.attr("data-state", "blocked");
-    text.text("Not ready: " + data.StartMatchConditions.join(" • "));
+    text.text("Not ready: " + data.StartMatchConditions.join("; "));
   }
   text.attr("title", data.StartMatchConditions ? data.StartMatchConditions.join("\n") : "");
 };

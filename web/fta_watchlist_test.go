@@ -4,6 +4,7 @@ package web
 
 import (
 	"encoding/json"
+	"github.com/Team254/cheesy-arena/field"
 	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/model"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,7 @@ func TestSummarizeFtaTeam(t *testing.T) {
 			name:            "never connected",
 			team:            model.Team{Id: 254},
 			expectedRisk:    model.FtaSeverityBad,
-			expectedReasons: []string{"Hasn't connected to the field yet"},
+			expectedReasons: []string{"Never connected"},
 		},
 		{
 			name:            "healthy",
@@ -197,5 +198,14 @@ func TestFtaWatchlistApi(t *testing.T) {
 	if assert.Len(t, watchlist.Upcoming, 2) {
 		assert.Equal(t, "Q4", watchlist.Upcoming[0].ShortName)
 		assert.Equal(t, "Q5", watchlist.Upcoming[1].ShortName)
+	}
+
+	// A team linked up right now isn't flagged as never having connected, even before its first match starts.
+	web.arena.AllianceStations["B3"].DsConn = &field.DriverStationConnection{TeamId: 1114, RobotLinked: true}
+	for _, summary := range getWatchlist().Teams {
+		if summary.TeamId == 1114 {
+			assert.True(t, summary.HasConnected)
+			assert.Equal(t, model.FtaSeverityGood, summary.Risk)
+		}
 	}
 }

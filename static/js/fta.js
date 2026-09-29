@@ -12,31 +12,43 @@ const faultIds = new Set();
 let faultFilter = "all";
 let openTeamId = null;
 let openTeamHistory = null;
-let selectedNoteTag = "";
 let alertsEnabled = false;
 let audioContext = null;
 let timelineMatchesLoaded = false;
 let timelineRefreshTimer = null;
-let blockersExpanded = true;
+let blockersOpen = false;
 let watchlist = null;
 const teamSummaries = new Map();
 let teamFilter = "flagged";
-// When each station started waiting on something before the match, so the FTA can see who is holding up the field.
-const stationWaits = {};
+// The status line for each station, and when it started waiting on something before the match.
+const stationLines = {};
 
 const stationIds = ["R1", "R2", "R3", "B1", "B2", "B3"];
+const sideTabs = ["faults", "upnext", "teams", "timeline"];
 const matchStatePreMatch = 0;
 const matchStatePostMatch = 5;
 const timelineRefreshMs = 5000;
-const tabIds = ["field", "faults", "upnext", "teams", "timeline"];
-// Waiting longer than this is called out, since it's likely holding up the schedule.
+// A station waiting longer than this is probably holding up the schedule.
 const longWaitSec = 120;
-// Below this the radio link is weak enough to be worth watching; field radios typically sit well above it.
 const lowSnrDb = 20;
-// Stats are saved in the background as the match ends, so give them a moment before refreshing the watchlist.
+// Match stats are saved as the match ends, so give them a moment before refreshing the watchlist.
 const watchlistPostMatchDelayMs = 2000;
+const wideLayout = window.matchMedia("(min-width: 960px)");
 
-// Suggests a note category for each kind of fault, so that "+ note" from the fault log needs as few taps as possible.
+const noteTagLabels = {
+  radio: "Radio",
+  ethernet: "Ethernet",
+  ds: "DS",
+  code: "Code",
+  can: "CAN",
+  brownout: "Brownout",
+  battery: "Battery",
+  bumpers: "Bumpers",
+  mechanical: "Mechanical",
+  other: "Other",
+};
+
+// The note category to suggest when adding a note from a fault.
 const faultNoteTags = {
   DsLost: "ds",
   DsRestored: "ds",
@@ -47,9 +59,20 @@ const faultNoteTags = {
   HighTripTime: "radio",
   PacketLoss: "radio",
   WrongStation: "ds",
-  EStop: "other",
-  AStop: "other",
-  Bypass: "other",
+};
+
+// Each link in the connection chain after the Ethernet cable, in the order they come up.
+const chainLinks = {ds: "DsLinked", radio: "RadioLinked", rio: "RioLinked", code: "RobotLinked"};
+
+// Short names for the checklist items, for the "Waiting on" line on each station.
+const checkShortNames = {
+  "Station": "correct station",
+  "Driver station": "DS",
+  "Radio": "radio",
+  "roboRIO": "RIO",
+  "Robot code": "code",
+  "E-stop clear": "E-stop release",
+  "A-stop reset": "A-stop reset",
 };
 
 const isMatchRunning = function () {
@@ -60,16 +83,40 @@ const allianceOf = function (station) {
   return station ? station[0] : "";
 };
 
-const stationChip = function (station) {
-  return $("<span class='station-chip'>").attr("data-alliance", allianceOf(station)).text(station || "FIELD");
+const plural = function (count, noun) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 };
 
-const formatMatchTime = function (event) {
+const formatSeconds = function (totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+};
+
+const formatEventTime = function (event) {
   if (event.MatchTimeSec > 0) {
-    const seconds = Math.floor(event.MatchTimeSec);
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    return formatSeconds(event.MatchTimeSec);
   }
   return new Date(event.Time).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+};
+
+const stationChip = function (station) {
+  return $("<span class='chip'>").attr("data-alliance", allianceOf(station)).text(station || "Field");
+};
+
+const readSetting = function (key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return null;
+  }
+};
+
+const saveSetting = function (key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    // Storage is unavailable; the setting just won't be remembered.
+  }
 };
 
 const showToast = function (message, severity) {
@@ -90,18 +137,18 @@ const fetchJson = function (url) {
   });
 };
 
-// ---------- Tabs ----------
+// Tabs and display options
 
 const showTab = function (tab) {
+  // On a wide screen the stations are always shown, so the "field" tab means the fault log.
+  if (tab === "field" && wideLayout.matches) {
+    tab = "faults";
+  }
   $("body").attr("data-tab", tab);
   $("#tabs button").each(function () {
     $(this).attr("aria-selected", $(this).attr("data-tab") === tab ? "true" : "false");
   });
-  try {
-    localStorage.setItem("ftaTab", tab);
-  } catch (e) {
-    // Storage unavailable; the tab just won't be remembered.
-  }
+  saveSetting("ftaTab", tab);
   if (tab === "timeline") {
     if (!timelineMatchesLoaded) {
       loadTimelineMatches();
@@ -113,7 +160,32 @@ const showTab = function (tab) {
   }
 };
 
-// ---------- Arena status ----------
+// Switches to a side tab, bringing the side panel back if it was hidden.
+const openSideTab = function (tab) {
+  setFieldOnly(false);
+  showTab(tab);
+};
+
+const toggleOptions = function (open) {
+  const menu = $("#optionsMenu");
+  open = open === undefined ? menu.prop("hidden") : open;
+  menu.prop("hidden", !open);
+  $("#optionsButton").attr("aria-expanded", open ? "true" : "false");
+};
+
+const setSwap = function (swap) {
+  $("body").attr("data-swap", swap ? "true" : "false");
+  $("#optSwap").prop("checked", swap);
+  saveSetting("ftaSwap", swap);
+};
+
+const setFieldOnly = function (fieldOnly) {
+  $("body").attr("data-field-only", fieldOnly ? "true" : "false");
+  $("#optFieldOnly").prop("checked", fieldOnly);
+  saveSetting("ftaFieldOnly", fieldOnly);
+};
+
+// Arena status
 
 const handleArenaStatus = function (data) {
   lastArenaStatus = data;
@@ -131,21 +203,21 @@ const handleArenaStatus = function (data) {
   }
 
   setHealth("#apHealth", networkHealth(data.AccessPointStatus), `Access point: ${data.AccessPointStatus}`);
-  setHealth("#switchHealth", networkHealth(data.SwitchStatus), `Network switch: ${data.SwitchStatus}`);
+  setHealth("#switchHealth", networkHealth(data.SwitchStatus), `Switch: ${data.SwitchStatus}`);
   if (data.PlcIsEnabled) {
     const plcOk = data.PlcIsHealthy && !data.FieldEStop;
-    setHealth("#plcHealth", plcOk ? "ok" : "bad", data.FieldEStop ? "Field E-stop active" : "PLC");
+    setHealth("#plcHealth", plcOk ? "ok" : "bad", data.FieldEStop ? "PLC: field E-stop" : "PLC");
   } else {
-    setHealth("#plcHealth", "", "PLC not enabled");
+    setHealth("#plcHealth", "", "PLC: not enabled");
   }
 
-  updateReadiness(data);
+  updateStatus(data);
   updateFtaReady(data.IsFtaReady);
   $.each(stationIds, function (i, station) {
     updateStation(station, data.AllianceStations[station], data.FtaStations[station], data.PlcIsEnabled);
   });
   if (openTeamId !== null) {
-    updatePanelChecks();
+    updatePanelLive();
   }
 };
 
@@ -166,63 +238,91 @@ const setHealth = function (selector, status, title) {
   $(selector).attr("data-status", status).attr("title", title);
 };
 
-// Shows whether the match can start and, if not, exactly what is blocking it and how to fix it.
-const updateReadiness = function (data) {
-  const readiness = $("#readiness");
-  const list = $("#blockerList");
+// A few words for each start blocker, for the one-line summary in the status strip.
+const blockerSummary = function (blocker) {
+  const stations = (blocker.Stations || []).join(" ");
+  switch (blocker.Code) {
+    case "robotNotConnected":
+      return `No robot ${stations}`;
+    case "eStop":
+      return `E-stop ${stations}`;
+    case "aStopNotReset":
+      return `A-stop not reset ${stations}`;
+    case "matchInProgress":
+      return "Previous match not committed";
+    case "plcUnhealthy":
+      return "PLC down";
+    case "fieldEStop":
+      return "Field E-stop";
+    case "ftaNotReady":
+      return "FTA switch off";
+    default:
+      return blocker.Message;
+  }
+};
+
+// Updates the strip under the top bar saying whether the match can start and, if not, why.
+const updateStatus = function (data) {
   const badFaults = faults.filter((fault) => fault.Severity === "bad").length;
-  list.empty();
+  const problems = faults.filter((fault) => fault.Severity !== "good").length;
+  let state;
+  let label;
+  let detail;
+  let blockers = [];
 
   if (isMatchRunning()) {
-    readiness.attr("data-state", "running").attr("data-faults", badFaults > 0 ? "true" : "false");
-    $("#readinessIcon").attr("class", "bi-broadcast");
-    $("#readinessText").text(
-      badFaults > 0 ? `Match running · ${badFaults} critical fault${badFaults === 1 ? "" : "s"}` : "Match running",
-    );
-    return;
-  }
-  if (data.MatchState === matchStatePostMatch) {
-    readiness.attr("data-state", "running").attr("data-faults", "false");
-    $("#readinessIcon").attr("class", "bi-flag");
-    $("#readinessText").text(`Post-match · ${faults.length} event${faults.length === 1 ? "" : "s"} logged`);
-    return;
-  }
-
-  readiness.attr("data-faults", "false");
-  if (data.CanStartMatch && !data.IsFtaReady) {
-    // Nothing is blocking the start, but the scorekeeper will be warned that the FTA hasn't said the field is ready.
-    readiness.attr("data-state", "waiting");
-    $("#readinessIcon").attr("class", "bi-hand-index");
-    $("#readinessText").text("Robots ready · waiting on FTA Ready");
-    return;
-  }
-  if (data.CanStartMatch) {
-    readiness.attr("data-state", "ready");
-    $("#readinessIcon").attr("class", "bi-check-circle-fill");
-    $("#readinessText").text("Ready to start");
-    return;
+    state = "running";
+    label = "In match";
+    detail = badFaults > 0 ? plural(badFaults, "critical fault") : "No critical faults";
+  } else if (matchState === matchStatePostMatch) {
+    state = "post";
+    label = "Post-match";
+    detail = problems > 0 ? `${plural(problems, "fault")} logged` : "No faults logged";
+  } else if (data.CanStartMatch && !data.IsFtaReady) {
+    // Without a PLC nothing blocks the start, but Match Play will warn that the FTA hasn't said the field is ready.
+    state = "waiting";
+    label = "Robots ready";
+    detail = "Waiting on FTA ready";
+  } else if (data.CanStartMatch) {
+    state = "ready";
+    label = "Ready";
+    detail = "Clear to start";
+  } else {
+    state = "blocked";
+    label = "Not ready";
+    blockers = data.StartMatchBlockers || [];
+    detail = blockers.map(blockerSummary).join(", ");
   }
 
-  const blockers = data.StartMatchBlockers || [];
-  readiness.attr("data-state", "blocked");
-  $("#readinessIcon").attr("class", "bi-exclamation-octagon");
-  $("#readinessText").text(`Can't start: ${blockers.length} issue${blockers.length === 1 ? "" : "s"}`);
+  $("#status").attr({"data-state": state, "data-faults": badFaults > 0, "data-details": blockers.length > 0});
+  $("#statusLabel").text(label);
+  $("#statusDetail").text(detail);
+  renderBlockers(blockers);
+  if (blockers.length === 0) {
+    toggleBlockers(false);
+  }
+};
+
+const renderBlockers = function (blockers) {
+  const list = $("#blockerList").empty();
   $.each(blockers, function (i, blocker) {
     const item = $("<li class='blocker'>");
-    // Show the message without the station list, since the stations are shown as tappable chips instead.
+    // The stations are shown as buttons, so leave them out of the message.
     const message = blocker.Stations ? blocker.Message.replace(/\s*\([^)]*\)$/, "") : blocker.Message;
     item.append($("<span class='blocker-message'>").text(message));
-    const stations = $("<span class='blocker-stations'>");
-    $.each(blocker.Stations || [], function (j, station) {
-      stations.append(
-        $("<button type='button' class='station-chip'>").attr("data-alliance", allianceOf(station))
-          .attr("title", `Open ${station}`).text(station)
-          .on("click", function () {
-            openStation(station);
-          }),
-      );
-    });
-    item.append(stations);
+    if (blocker.Stations) {
+      const stations = $("<span class='blocker-stations'>");
+      $.each(blocker.Stations, function (j, station) {
+        stations.append(
+          $("<button type='button' class='chip'>").attr("data-alliance", allianceOf(station)).text(station)
+            .on("click", function () {
+              toggleBlockers(false);
+              openStation(station);
+            }),
+        );
+      });
+      item.append(stations);
+    }
     if (blocker.Hint) {
       item.append($("<span class='blocker-hint'>").text(blocker.Hint));
     }
@@ -230,112 +330,118 @@ const updateReadiness = function (data) {
   });
 };
 
-const toggleBlockers = function () {
-  blockersExpanded = !blockersExpanded;
-  $("#readinessSummary").attr("aria-expanded", blockersExpanded ? "true" : "false");
-  $("#readiness").attr("data-expanded", blockersExpanded ? "true" : "false");
+const toggleBlockers = function (open) {
+  const hasDetails = $("#status").attr("data-details") === "true";
+  blockersOpen = hasDetails && (open === undefined ? !blockersOpen : open);
+  $("#blockerList").prop("hidden", !blockersOpen);
+  $("#statusSummary").attr("aria-expanded", blockersOpen ? "true" : "false");
 };
 
 const updateFtaReady = function (ready) {
-  $("#ftaReadyButton").attr("data-ready", ready ? "true" : "false").attr("aria-pressed", ready ? "true" : "false");
-  $("#ftaReadyButton i").attr("class", ready ? "bi-check-circle-fill" : "bi-x-octagon");
-  $("#ftaReadyButton span").text(ready ? "FTA Ready" : "FTA Not Ready");
+  $("#ftaReadyButton").attr({"data-ready": ready, "aria-pressed": ready}).text(ready ? "FTA Ready" : "FTA Not Ready");
 };
 
 const toggleFtaReady = function () {
   websocket.send("toggleFtaReady");
 };
 
+// Stations
+
 const updateStation = function (station, stationStatus, ftaStatus, plcEnabled) {
   const card = $(`#station${station}`);
   const team = stationStatus.Team;
   const dsConn = stationStatus.DsConn;
   const wifi = stationStatus.WifiStatus;
+  const active = Boolean(team) && !stationStatus.Bypass;
 
-  card.find(".team-number").text(team ? team.Id : "—");
-  card.find(".team-name").text(team && team.Nickname ? team.Nickname : "");
-  card.find(".pinned-note").text(team && team.FtaNotes ? team.FtaNotes : "");
+  card.attr("data-team-id", team ? team.Id : "");
+  card.attr("aria-label", team ? `${station} ${team.Id}` : `${station} empty`);
+  card.find(".st-team").text(team ? team.Id : "-");
+  card.find(".st-name").text(team ? team.Nickname || "" : "");
+  card.find(".st-note").text(team ? team.FtaNotes || "" : "");
 
-  // Connection chain, from the cable up to robot code; the first broken link is where to start looking.
-  const links = {
-    eth: plcEnabled ? stationStatus.Ethernet : null,
-    ds: Boolean(dsConn && dsConn.DsLinked),
-    radio: Boolean(dsConn && dsConn.RadioLinked),
-    rio: Boolean(dsConn && dsConn.RioLinked),
-    code: Boolean(dsConn && dsConn.RobotLinked),
-  };
-  let foundBreak = false;
-  $.each(links, function (link, ok) {
-    const element = card.find(`.chain [data-link="${link}"]`);
-    if (!team || stationStatus.Bypass || ok === null) {
-      element.removeAttr("data-ok").removeAttr("data-first-break");
-      return;
-    }
-    element.attr("data-ok", ok ? "true" : "false");
-    const firstBreak = !ok && !foundBreak && link !== "eth";
-    element.attr("data-first-break", firstBreak ? "true" : "false");
-    foundBreak = foundBreak || firstBreak;
+  // The connection chain. Links past the first break can't be reached anyway, so only the break itself is red.
+  card.find(".chain [data-link='eth']").prop("hidden", !plcEnabled);
+  setLink(card, "eth", active && plcEnabled ? stationStatus.Ethernet : null);
+  let broken = false;
+  $.each(chainLinks, function (link, field) {
+    const ok = Boolean(dsConn && dsConn[field]);
+    setLink(card, link, !active || (broken && !ok) ? null : ok);
+    broken = broken || !ok;
   });
 
-  // Metrics, colored by whether the server has flagged them.
   const flagTypes = new Set(ftaStatus.Flags.map((flag) => flag.Type));
-  const linked = dsConn && dsConn.RobotLinked;
-  setMetric(card, "battery", linked && dsConn.BatteryVoltage > 0 ? dsConn.BatteryVoltage.toFixed(1) + "V" : "—",
-    flagTypes.has("Brownout") ? "bad" : flagTypes.has("LowBattery") ? "warn" : "");
-  setMetric(card, "trip", linked ? dsConn.DsRobotTripTimeMs + "ms" : "—", flagTypes.has("HighTripTime") ? "warn" : "");
-  setMetric(card, "missed", dsConn ? dsConn.MissedPacketCount : "—", "");
+  const linked = Boolean(dsConn && dsConn.RobotLinked);
+  card.find(".st-battery").text(linked && dsConn.BatteryVoltage > 0 ? dsConn.BatteryVoltage.toFixed(1) + "V" : "")
+    .attr("data-status", flagTypes.has("Brownout") ? "bad" : flagTypes.has("LowBattery") ? "warn" : "");
+  setMetric(card, "trip", linked ? dsConn.DsRobotTripTimeMs + "ms" : "-", flagTypes.has("HighTripTime") ? "warn" : "");
+  setMetric(card, "missed", dsConn ? dsConn.MissedPacketCount : "-", "");
   const snr = wifi && wifi.RadioLinked && wifi.SignalNoiseRatio > 0 ? wifi.SignalNoiseRatio : null;
-  setMetric(card, "snr", snr === null ? "—" : snr, snr !== null && snr < lowSnrDb ? "warn" : "");
-  setMetric(card, "bandwidth", wifi && wifi.MBits >= 0.01 ? wifi.MBits.toFixed(1) : "—", "");
+  setMetric(card, "snr", snr === null ? "-" : snr, snr !== null && snr < lowSnrDb ? "warn" : "");
+  setMetric(card, "bandwidth", wifi && wifi.MBits >= 0.01 ? wifi.MBits.toFixed(1) : "-", "");
 
-  const flags = card.find(".flags").empty();
-  $.each(ftaStatus.Flags, function (i, flag) {
-    flags.append($("<li class='flag'>").attr("data-severity", flag.Severity).text(flag.Message));
-  });
-
-  // Before the match, say exactly what the station is still waiting on, and for how long.
-  if (team && !stationStatus.Bypass && matchState === matchStatePreMatch && !ftaStatus.Ready) {
-    const missing = ftaStatus.Checks.filter((check) => !check.Ok && !check.Advisory).map((check) => check.Name);
-    const wait = stationWaits[station];
-    if (!wait || wait.teamId !== team.Id) {
-      stationWaits[station] = {teamId: team.Id, since: Date.now(), text: ""};
-    }
-    stationWaits[station].text = "Waiting on " + missing.join(", ");
-  } else {
-    delete stationWaits[station];
+  // The status line shows the worst flag and, before the match, what the station is waiting on and for how long.
+  const flags = ftaStatus.Flags.slice().sort((a, b) => (b.Severity === "bad") - (a.Severity === "bad"));
+  const worstFlag = flags[0];
+  const line = {teamId: team ? team.Id : 0, text: "", severity: "", waitingSince: null};
+  if (worstFlag) {
+    line.text = worstFlag.Message + (flags.length > 1 ? ` +${flags.length - 1}` : "");
+    line.severity = worstFlag.Severity;
   }
-  renderWait(station);
+  if (active && matchState === matchStatePreMatch && !ftaStatus.Ready) {
+    const previous = stationLines[station];
+    line.waitingSince = previous && previous.waitingSince && previous.teamId === line.teamId ?
+      previous.waitingSince : Date.now();
+    const missing = ftaStatus.Checks.find((check) => !check.Ok && !check.Advisory);
+    if (missing && line.severity !== "bad") {
+      line.text = `Waiting on ${checkShortNames[missing.Name] || missing.Name}`;
+      line.severity = "warn";
+    }
+  }
+  stationLines[station] = line;
+  renderStationLine(station);
 
   let health = "ok";
   if (!team) {
     health = "empty";
   } else if (stationStatus.Bypass) {
     health = "bypass";
-  } else if (ftaStatus.Flags.some((flag) => flag.Severity === "bad")) {
+  } else if (flags.some((flag) => flag.Severity === "bad")) {
     health = "bad";
-  } else if (!ftaStatus.Ready || ftaStatus.Flags.length > 0) {
+  } else if (!ftaStatus.Ready || flags.length > 0) {
     health = "warn";
   }
   card.attr("data-health", health);
-  card.attr("data-team-id", team ? team.Id : "");
 };
 
-const renderWait = function (station) {
-  const element = $(`#station${station} .waiting`);
-  const wait = stationWaits[station];
-  if (!wait) {
-    element.text("").removeAttr("data-long");
-    return;
+const setLink = function (card, link, ok) {
+  const element = card.find(`.chain [data-link="${link}"]`);
+  if (ok === null || ok === undefined) {
+    element.removeAttr("data-ok");
+  } else {
+    element.attr("data-ok", ok ? "true" : "false");
   }
-  const seconds = Math.floor((Date.now() - wait.since) / 1000);
-  element.text(`${wait.text} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`)
-    .attr("data-long", seconds >= longWaitSec ? "true" : "false");
 };
 
 const setMetric = function (card, metric, text, status) {
-  const element = card.find(`.metrics [data-metric="${metric}"]`);
-  element.attr("data-status", status);
-  element.find("dd").text(text);
+  card.find(`.st-metrics [data-metric="${metric}"]`).attr("data-status", status).find("dd").text(text);
+};
+
+const renderStationLine = function (station) {
+  const line = stationLines[station];
+  const element = $(`#station${station} .st-status`);
+  if (!line || !line.text) {
+    element.text("").removeAttr("data-severity data-long");
+    return;
+  }
+  let text = line.text;
+  let long = false;
+  if (line.waitingSince) {
+    const waitedSec = (Date.now() - line.waitingSince) / 1000;
+    text += ` ${formatSeconds(waitedSec)}`;
+    long = waitedSec >= longWaitSec;
+  }
+  element.text(text).attr({"data-severity": line.severity, "data-long": long});
 };
 
 const openStation = function (station) {
@@ -347,7 +453,7 @@ const openStation = function (station) {
   openTeamPanel(stationStatus.Team.Id);
 };
 
-// ---------- Fault log ----------
+// Fault log
 
 const loadCurrentFaults = function () {
   const matchId = currentMatchId;
@@ -355,15 +461,12 @@ const loadCurrentFaults = function () {
     if (matchId !== currentMatchId) {
       return;
     }
-    faults = [];
+    faults = events;
     faultIds.clear();
-    $.each(events, function (i, event) {
-      faults.push(event);
-      faultIds.add(event.Id);
-    });
+    events.forEach((event) => faultIds.add(event.Id));
     renderFaults();
   }).catch(function (error) {
-    showToast("Couldn't load the fault log: " + error.message, "error");
+    showToast("Couldn't load faults: " + error.message, "error");
   });
 };
 
@@ -375,14 +478,16 @@ const handleFtaEvent = function (event) {
   faultIds.add(event.Id);
   renderFaults(event.Id);
   if (lastArenaStatus) {
-    updateReadiness(lastArenaStatus);
+    updateStatus(lastArenaStatus);
   }
 
   if (event.Severity === "bad") {
     const card = $(`#station${event.Station}`);
-    card.removeClass("flash");
-    void card[0]?.offsetWidth; // Force a reflow so that the animation restarts.
-    card.addClass("flash");
+    if (card.length) {
+      card.removeClass("flash");
+      void card[0].offsetWidth; // Force a reflow so that the animation restarts.
+      card.addClass("flash");
+    }
     alertFault();
   }
   if (openTeamId !== null && event.TeamId === openTeamId) {
@@ -392,7 +497,7 @@ const handleFtaEvent = function (event) {
 
 const setFaultFilter = function (filter) {
   faultFilter = filter;
-  $(".filter-chips button").each(function () {
+  $("[data-filter]").each(function () {
     $(this).attr("aria-pressed", $(this).attr("data-filter") === filter ? "true" : "false");
   });
   renderFaults();
@@ -411,37 +516,36 @@ const faultMatchesFilter = function (fault) {
 };
 
 const renderFaults = function (newFaultId) {
-  const list = $("#faultList").empty();
-  const shown = faults.filter(faultMatchesFilter).slice().reverse();
-  $.each(shown, function (i, fault) {
-    list.append(faultItem(fault, true).toggleClass("new", fault.Id === newFaultId));
-  });
-  $("#faultEmpty").toggle(shown.length === 0);
+  const shown = faults.filter(faultMatchesFilter).reverse();
+  $("#faultList").empty().append(shown.map((fault) => faultItem(fault, true).toggleClass("new", fault.Id === newFaultId)));
+  $("#faultEmpty").prop("hidden", shown.length > 0)
+    .text(faults.length > 0 ? "No faults match this filter." : "No faults this match.");
 
   const problems = faults.filter((fault) => fault.Severity !== "good");
-  $("#faultCount").text(problems.length).attr("data-count", problems.length)
+  $("#faultCount").text(problems.length).prop("hidden", problems.length === 0)
     .attr("data-severity", problems.some((fault) => fault.Severity === "bad") ? "bad" : "");
 };
 
-const faultItem = function (fault, withNoteButton) {
+const faultItem = function (fault, forCurrentMatch) {
   const item = $("<li class='fault'>").attr("data-severity", fault.Severity);
-  item.append($("<span class='fault-time'>").text(formatMatchTime(fault)));
-  const body = $("<div class='fault-body'>");
-  const who = $("<div class='fault-who'>").append(stationChip(fault.Station));
-  if (fault.TeamId) {
-    who.append($("<span>").text(fault.TeamId));
+  item.append($("<span class='fault-time'>").text(formatEventTime(fault)));
+  const body = $("<div class='fault-body'>").append(stationChip(fault.Station));
+  // In a team's own history, the team number would just repeat on every line.
+  if (fault.TeamId && forCurrentMatch) {
+    body.append($("<span class='fault-team'>").text(fault.TeamId));
   }
-  if (!withNoteButton && fault.MatchShortName) {
-    who.append($("<span>").text(fault.MatchShortName));
+  if (!forCurrentMatch && fault.MatchShortName) {
+    body.append($("<span class='fault-match'>").text(fault.MatchShortName));
   }
-  body.append(who).append($("<div class='fault-message'>").text(fault.Message));
+  body.append($("<span class='fault-message'>").text(fault.Message));
   item.append(body);
-  if (withNoteButton && fault.TeamId) {
+  if (forCurrentMatch && fault.TeamId) {
     item.append(
-      $("<button type='button' class='fault-note'><i class='bi-pencil'></i> Note</button>").on("click", function () {
+      $("<button type='button' class='icon-button' title='Add a note' aria-label='Add a note'>" +
+        "<i class='bi-pencil-square'></i></button>").on("click", function () {
         openTeamPanel(fault.TeamId, {
           tag: faultNoteTags[fault.Type] || "other",
-          text: `${formatMatchTime(fault)} ${fault.Message}. `,
+          text: `${formatEventTime(fault)} ${fault.Message}. `,
         });
       }),
     );
@@ -449,36 +553,34 @@ const faultItem = function (fault, withNoteButton) {
   return item;
 };
 
-const copyFaultLog = function (button) {
+const copyFaultLog = function () {
   const lines = faults.map(function (fault) {
-    const who = fault.TeamId ? `${fault.Station} ${fault.TeamId}` : fault.Station || "FIELD";
-    return `${formatMatchTime(fault)}  ${who}  ${fault.Message}`;
+    const who = fault.TeamId ? `${fault.Station} ${fault.TeamId}` : fault.Station || "Field";
+    return `${formatEventTime(fault)}  ${who}  ${fault.Message}`;
   });
-  const text = `${currentMatchName} fault log\n${lines.join("\n")}`;
+  const text = [`${currentMatchName} faults`].concat(lines.length ? lines : ["None"]).join("\n");
   navigator.clipboard.writeText(text).then(function () {
-    showToast("Fault log copied");
+    showToast("Copied");
   }).catch(function () {
-    showToast("Copy failed", "error");
+    showToast("Couldn't copy", "error");
   });
 };
 
-// ---------- Alerts ----------
+// Alerts
 
 const toggleAlerts = function () {
   alertsEnabled = !alertsEnabled;
   applyAlertSetting();
-  try {
-    localStorage.setItem("ftaAlerts", alertsEnabled ? "true" : "false");
-  } catch (e) {
-    // Storage unavailable; the setting just won't be remembered.
-  }
+  saveSetting("ftaAlerts", alertsEnabled);
   if (alertsEnabled) {
+    // Play the alert once so the browser allows sound from now on, and so the FTA knows what it sounds like.
     alertFault();
   }
 };
 
 const applyAlertSetting = function () {
   $("#alertToggle").attr("aria-pressed", alertsEnabled ? "true" : "false")
+    .attr("title", alertsEnabled ? "Alerts on: beep and vibrate on new faults" : "Alerts off")
     .find("i").attr("class", alertsEnabled ? "bi-bell-fill" : "bi-bell-slash");
 };
 
@@ -502,38 +604,39 @@ const alertFault = function () {
       oscillator.stop(audioContext.currentTime + offset + 0.16);
     });
   } catch (e) {
-    // Audio unavailable; vibration and the visual flash still work.
+    // No audio; the vibration and the station flash still work.
   }
 };
 
-// ---------- Team panel ----------
+// Team panel
 
 const openTeamPanel = function (teamId, noteDraft) {
-  const switchingTeams = openTeamId !== teamId;
-  openTeamId = teamId;
-  if (switchingTeams) {
+  if (openTeamId !== teamId) {
     openTeamHistory = null;
     $("#panelTeamNumber").text(teamId);
     $("#panelTeamName").text("");
-    $("#panelStation").text("").hide();
-    $("#pinnedNotes").val("");
+    $("#panelStation").prop("hidden", true);
+    $("#pinnedNotes").val("").removeAttr("data-saved");
     $("#noteText").val("");
-    selectNoteTag("");
-    $("#panelMatches tbody, #panelNotes, #panelEvents, #panelSummary").empty();
+    $("#noteTag").val("other");
+    $("#panelNotes, #panelSummary, #panelMatches tbody, #panelEvents").empty();
+    $("#panelMatches").prop("hidden", true);
+    $("#teamPanel .panel-body").scrollTop(0);
   }
+  openTeamId = teamId;
   if (noteDraft) {
-    selectNoteTag(noteDraft.tag);
+    $("#noteTag").val(noteDraft.tag);
     $("#noteText").val(noteDraft.text);
   }
+  toggleOptions(false);
+  toggleBlockers(false);
   $("#scrim").prop("hidden", false);
   $("#teamPanel").attr("aria-hidden", "false");
   renderPanelRisk();
-  updatePanelChecks();
+  updatePanelLive();
   refreshTeamPanel();
   if (noteDraft) {
-    const textArea = $("#noteText")[0];
-    textArea.focus();
-    textArea.setSelectionRange(textArea.value.length, textArea.value.length);
+    focusNoteText();
   }
 };
 
@@ -542,6 +645,12 @@ const closeTeamPanel = function () {
   openTeamHistory = null;
   $("#teamPanel").attr("aria-hidden", "true");
   $("#scrim").prop("hidden", true);
+};
+
+const focusNoteText = function () {
+  const textArea = $("#noteText")[0];
+  textArea.focus();
+  textArea.setSelectionRange(textArea.value.length, textArea.value.length);
 };
 
 const refreshTeamPanel = function () {
@@ -560,13 +669,10 @@ const refreshTeamPanel = function () {
 
 const renderTeamPanel = function (history, firstLoad) {
   $("#panelTeamName").text(history.Team.Nickname || history.Team.Name || "");
-  if (history.Station) {
-    $("#panelStation").text(history.Station).attr("data-alliance", allianceOf(history.Station)).show();
-  } else {
-    $("#panelStation").hide();
-  }
+  $("#panelStation").text(history.Station).attr("data-alliance", allianceOf(history.Station))
+    .prop("hidden", !history.Station);
 
-  // Don't clobber standing notes the FTA is in the middle of editing.
+  // Don't overwrite a pinned note that's being edited.
   const pinned = $("#pinnedNotes");
   if (firstLoad || pinned.val() === pinned.attr("data-saved")) {
     pinned.val(history.Team.FtaNotes || "");
@@ -574,130 +680,129 @@ const renderTeamPanel = function (history, firstLoad) {
   pinned.attr("data-saved", history.Team.FtaNotes || "");
   $("#savePinnedNotes").prop("disabled", pinned.val() === pinned.attr("data-saved"));
 
-  // Summary of every match on record.
   const stats = history.Stats;
   const totalFaults = stats.reduce((sum, stat) => sum + stat.FaultCount, 0);
   const totalDown = stats.reduce((sum, stat) => sum + stat.RobotDownSec, 0);
+  const brownouts = stats.reduce((sum, stat) => sum + (stat.BrownoutCount || 0), 0);
   const voltages = stats.map((stat) => stat.MinBatteryVoltage).filter((voltage) => voltage > 0);
   const minVoltage = voltages.length ? Math.min(...voltages) : null;
-  const brownouts = stats.reduce((sum, stat) => sum + (stat.BrownoutCount || 0), 0);
   $("#panelSummary").empty().append(
-    summaryTile(stats.length, "Matches", ""),
-    summaryTile(totalFaults, "Faults", totalFaults > 0 ? "warn" : ""),
-    summaryTile(minVoltage === null ? "—" : minVoltage.toFixed(1) + "V", "Lowest",
-      minVoltage !== null && minVoltage < 6.8 ? "bad" : minVoltage !== null && minVoltage < 7.5 ? "warn" : ""),
-    summaryTile(brownouts > 0 ? brownouts : `${Math.round(totalDown)}s`, brownouts > 0 ? "Brownouts" : "Down",
-      brownouts > 0 || totalDown >= 5 ? "bad" : ""),
+    tile(stats.length, "Matches", ""),
+    tile(totalFaults, "Faults", totalFaults > 0 ? "warn" : ""),
+    tile(minVoltage === null ? "-" : minVoltage.toFixed(1) + "V", "Low batt",
+      minVoltage === null ? "" : minVoltage < 6.8 ? "bad" : minVoltage < 7.5 ? "warn" : ""),
+    brownouts > 0 ? tile(brownouts, "Brownouts", "bad") :
+      tile(`${Math.round(totalDown)}s`, "Down", totalDown >= 5 ? "bad" : ""),
   );
 
   const tbody = $("#panelMatches tbody").empty();
   $.each(stats, function (i, stat) {
     const row = $("<tr>").attr("title", "Show timeline").on("click", function () {
       closeTeamPanel();
-      showTab("timeline");
+      openSideTab("timeline");
       loadTimeline(stat.MatchId);
     });
     row.append($("<td>").text(stat.MatchShortName || "Test"));
     row.append($("<td>").append(stationChip(stat.Station)));
     row.append(statCell(stat.FaultCount, stat.FaultCount > 0 ? "warn" : ""));
-    row.append(statCell(stat.MinBatteryVoltage > 0 ? stat.MinBatteryVoltage.toFixed(1) : "—",
+    row.append(statCell(stat.MinBatteryVoltage > 0 ? stat.MinBatteryVoltage.toFixed(1) : "-",
       stat.MinBatteryVoltage > 0 && stat.MinBatteryVoltage < 6.8 ? "bad" : ""));
     row.append(statCell(`${Math.round(stat.RobotDownSec)}s`, stat.RobotDownSec >= 5 ? "bad" : ""));
     row.append(statCell(`${stat.MaxTripTimeMs}ms`, stat.MaxTripTimeMs >= 20 ? "warn" : ""));
     tbody.append(row);
   });
-  $("#panelMatchesEmpty").toggle(stats.length === 0);
+  $("#panelMatches").prop("hidden", stats.length === 0);
 
-  const notes = $("#panelNotes").empty();
-  $.each(history.Notes, function (i, note) {
-    const item = $("<li class='note'>");
-    const meta = $("<div class='note-meta'>").append($("<span class='note-tag'>").text(note.Tag));
-    if (note.MatchShortName) {
-      meta.append($("<span>").text(note.MatchShortName));
-    }
-    meta.append($("<span>").text(new Date(note.Time).toLocaleString([], {
-      weekday: "short", hour: "numeric", minute: "2-digit",
-    })));
-    item.append(meta).append($("<div class='note-text'>").text(note.Text));
-    item.append(
-      $("<button type='button' class='icon-button' aria-label='Delete note'><i class='bi-trash'></i></button>")
-        .on("click", function () {
-          if (confirm("Delete this note?")) {
-            websocket.send("deleteNote", {id: note.Id});
-          }
-        }),
-    );
-    notes.append(item);
-  });
-  $("#panelNotesEmpty").toggle(history.Notes.length === 0);
+  $("#panelNotes").empty().append(history.Notes.map(noteItem));
 
-  const events = $("#panelEvents").empty();
-  $.each(history.Events.slice(0, 30), function (i, event) {
-    events.append(faultItem(event, false));
-  });
-  $("#panelEventsEmpty").toggle(history.Events.length === 0);
+  $("#panelEvents").empty().append(history.Events.slice(0, 30).map((event) => faultItem(event, false)));
+  $("#panelEventsEmpty").prop("hidden", history.Events.length > 0);
 };
 
-const summaryTile = function (value, label, status) {
-  return $("<div class='summary-tile'>").attr("data-status", status)
-    .append($("<strong>").text(value), $("<span>").text(label));
+const tile = function (value, label, status) {
+  return $("<div class='tile'>").attr("data-status", status).append($("<strong>").text(value), $("<span>").text(label));
 };
 
 const statCell = function (text, status) {
   return $("<td>").attr("data-status", status).text(text);
 };
 
-// Shows the live readiness checklist for the open team, if it's in the current match.
-const updatePanelChecks = function () {
-  const section = $("#panelLive");
-  if (!lastArenaStatus || openTeamId === null) {
-    section.hide();
-    return;
+const noteItem = function (note) {
+  const meta = $("<div class='note-meta'>").append($("<span class='note-tag'>").text(noteTagLabels[note.Tag] || note.Tag));
+  if (note.MatchShortName) {
+    meta.append($("<span>").text(note.MatchShortName));
   }
-  const station = stationIds.find(function (id) {
+  meta.append($("<span>").text(new Date(note.Time).toLocaleString([], {
+    weekday: "short", hour: "numeric", minute: "2-digit",
+  })));
+  const deleteButton = $("<button type='button' class='icon-button' title='Delete note'><i class='bi-trash'></i></button>")
+    .on("click", function () {
+      if (confirm("Delete this note?")) {
+        websocket.send("deleteNote", {id: note.Id});
+      }
+    });
+  return $("<li class='note'>").append(meta, $("<div class='note-text'>").text(note.Text), deleteButton);
+};
+
+// Shows what's wrong right now with the open team, if it's in the current match.
+const updatePanelLive = function () {
+  const section = $("#panelLive");
+  const station = lastArenaStatus && stationIds.find(function (id) {
     const team = lastArenaStatus.AllianceStations[id].Team;
     return team && team.Id === openTeamId;
   });
-  const bypassButton = $("#bypassButton");
+  section.prop("hidden", !station);
   if (!station) {
-    section.hide();
-    bypassButton.prop("hidden", true);
     return;
   }
-  section.show();
-  const bypassed = lastArenaStatus.AllianceStations[station].Bypass;
-  bypassButton.prop("hidden", matchState !== matchStatePreMatch).attr("data-station", station)
-    .attr("data-bypassed", bypassed ? "true" : "false")
-    .html(bypassed ? "<i class='bi-arrow-counterclockwise'></i> Remove bypass" :
-      `<i class='bi-slash-circle'></i> Bypass ${station}`);
-  const list = $("#panelChecks").empty();
+
+  const stationStatus = lastArenaStatus.AllianceStations[station];
   const ftaStatus = lastArenaStatus.FtaStations[station];
+  const problems = $("#panelChecks").empty();
   $.each(ftaStatus.Flags, function (i, flag) {
-    list.append($("<li data-ok='false'>").attr("data-advisory", flag.Severity === "warn").text(flag.Message));
+    problems.append($("<li>").attr("data-severity", flag.Severity).text(flag.Message));
   });
+  const lowBatteryFlagged = ftaStatus.Flags.some((flag) => flag.Type === "LowBattery");
+  const passing = [];
   $.each(ftaStatus.Checks, function (i, check) {
-    const item = $("<li>").attr("data-ok", check.Ok).attr("data-advisory", check.Advisory).text(check.Name);
-    if (check.Detail && (!check.Ok || check.Name === "Battery")) {
+    if (check.Ok) {
+      passing.push(check.Name === "Battery" && check.Detail ? `Battery ${check.Detail}` : check.Name);
+      return;
+    }
+    if (check.Name === "Battery" && lowBatteryFlagged) {
+      // Already listed as a flag.
+      return;
+    }
+    const item = $("<li>").attr("data-severity", check.Advisory ? "warn" : "bad").text(check.Name);
+    if (check.Detail) {
       item.append($("<small>").text(check.Detail));
     }
-    list.append(item);
+    problems.append(item);
   });
-  if (list.children().length === 0) {
-    list.append($("<li data-ok='true'>").text("Bypassed"));
+
+  let summary = "";
+  if (stationStatus.Bypass) {
+    summary = "Bypassed. The robot stays disabled for the match.";
+  } else if (passing.length > 0) {
+    summary = "OK: " + passing.join(", ");
   }
+  $("#panelChecksOk").text(summary);
+
+  const bypassed = stationStatus.Bypass;
+  $("#bypassButton").prop("hidden", matchState !== matchStatePreMatch)
+    .attr({"data-station": station, "data-bypassed": bypassed})
+    .text(bypassed ? `Un-bypass ${station}` : `Bypass ${station}`);
 };
 
 const toggleBypass = function () {
   const button = $("#bypassButton");
   const station = button.attr("data-station");
-  const bypassing = button.attr("data-bypassed") !== "true";
-  if (bypassing && !confirm(`Bypass ${station}? The robot will stay disabled for the whole match.`)) {
+  if (button.attr("data-bypassed") !== "true" && !confirm(`Bypass ${station}? The robot will be disabled all match.`)) {
     return;
   }
   websocket.send("toggleBypass", {station: station});
 };
 
-// Shows why the open team is on the watchlist, if it is.
 const renderPanelRisk = function () {
   const summary = teamSummaries.get(openTeamId);
   const reasons = summary ? summary.Reasons : [];
@@ -705,11 +810,13 @@ const renderPanelRisk = function () {
   $("#panelReasons").empty().append(reasons.map(reasonItem));
 };
 
-const selectNoteTag = function (tag) {
-  selectedNoteTag = tag;
-  $("#noteTags button").each(function () {
-    $(this).attr("aria-checked", $(this).attr("data-tag") === tag ? "true" : "false");
-  });
+// Fills in the note from one of the common fixes, leaving room to add detail before saving.
+const quickNote = function (button) {
+  const text = $("#noteText");
+  const current = text.val().trim();
+  text.val(current ? `${current} ${$(button).text()}.` : `${$(button).text()}.`);
+  $("#noteTag").val($(button).attr("data-tag"));
+  focusNoteText();
 };
 
 const submitNote = function (event) {
@@ -718,29 +825,21 @@ const submitNote = function (event) {
   if (!text || openTeamId === null) {
     return;
   }
-  websocket.send("addNote", {teamId: openTeamId, tag: selectedNoteTag || "other", text: text});
+  websocket.send("addNote", {teamId: openTeamId, tag: $("#noteTag").val() || "other", text: text});
   $("#noteText").val("");
-  selectNoteTag("");
-  showToast(`Note added for ${openTeamId}`);
-};
-
-// Adds one of the common fixes as a note in a single tap.
-const quickNote = function (button) {
-  if (openTeamId === null) {
-    return;
-  }
-  websocket.send("addNote", {teamId: openTeamId, tag: $(button).attr("data-tag"), text: $(button).text()});
-  showToast(`Noted: ${$(button).text()}`);
+  $("#noteTag").val("other");
+  showToast(`Note saved for ${openTeamId}`);
 };
 
 const savePinnedNotes = function () {
-  websocket.send("updateTeamNotes", {teamId: openTeamId, notes: $("#pinnedNotes").val()});
-  $("#pinnedNotes").attr("data-saved", $("#pinnedNotes").val());
+  const pinned = $("#pinnedNotes");
+  websocket.send("updateTeamNotes", {teamId: openTeamId, notes: pinned.val()});
+  pinned.attr("data-saved", pinned.val());
   $("#savePinnedNotes").prop("disabled", true);
-  showToast("Standing notes saved");
+  showToast("Pinned note saved");
 };
 
-// ---------- Timeline ----------
+// Timeline
 
 const loadTimelineMatches = function () {
   timelineMatchesLoaded = true;
@@ -748,13 +847,13 @@ const loadTimelineMatches = function () {
     const select = $("#timelineMatch");
     const previous = select.val();
     select.empty();
-    select.append($("<option>").val(currentMatchId).text(`Current: ${currentMatchName || "match"}`));
+    select.append($("<option>").val(currentMatchId).text(`${currentMatchName || "Current match"} (current)`));
     $.each(matches, function (i, match) {
       if (match.Id === currentMatchId) {
         return;
       }
-      const faultText = match.FaultCount > 0 ? ` · ${match.FaultCount} fault${match.FaultCount === 1 ? "" : "s"}` : "";
-      select.append($("<option>").val(match.Id).text(`${match.ShortName}${faultText}`));
+      const faultText = match.FaultCount > 0 ? `, ${plural(match.FaultCount, "fault")}` : "";
+      select.append($("<option>").val(match.Id).text(match.ShortName + faultText));
     });
     if (previous && select.find(`option[value="${previous}"]`).length) {
       select.val(previous);
@@ -779,12 +878,12 @@ const loadTimeline = function (matchId) {
       renderTimeline(timeline);
     }
   }).catch(function (error) {
-    $("#timeline").empty().append($("<p class='empty'>").text("Couldn't load timeline: " + error.message));
+    $("#timeline").empty().append($("<p class='empty'>").text("Couldn't load the timeline: " + error.message));
   });
   scheduleTimelineRefresh();
 };
 
-// Keeps the timeline for the match in progress up to date while it's being watched.
+// Keeps the timeline of the match in progress up to date while it's on screen.
 const scheduleTimelineRefresh = function () {
   clearTimeout(timelineRefreshTimer);
   timelineRefreshTimer = setTimeout(function () {
@@ -803,28 +902,24 @@ const renderTimeline = function (timeline) {
   const duration = timeline.DurationSec;
   const percent = (seconds) => `${Math.max(0, Math.min(100, (seconds / duration) * 100))}%`;
 
-  const axis = $("<div class='tl-axis'>").append($("<span>"));
   const ticks = $("<div class='tl-ticks'>");
   for (let seconds = 0; seconds <= duration; seconds += 30) {
-    ticks.append($("<span>").css("left", percent(seconds)).text(`${Math.floor(seconds / 60)}:${
-      String(seconds % 60).padStart(2, "0")}`));
+    ticks.append($("<span>").css("left", percent(seconds)).text(formatSeconds(seconds)));
   }
-  axis.append(ticks);
-  container.append(axis);
+  container.append($("<div class='tl-axis'>").append($("<span>"), ticks));
 
   const fieldEvents = timeline.Events.filter((event) => !event.Station && event.MatchTimeSec > 0);
   $.each(timeline.Stations, function (i, station) {
     const lane = $("<div class='tl-lane'>");
-    const label = $("<div class='tl-label'>").append(stationChip(station.Station));
-    label.append($("<span class='tl-team'>").text(station.TeamId || "—"));
-    lane.append(label);
+    lane.append($("<div class='tl-label'>").append(stationChip(station.Station),
+      $("<span class='tl-team'>").text(station.TeamId || "-")));
 
     const track = $("<div class='tl-track'>");
     const samples = station.Samples;
     if (samples.length === 0) {
-      track.append($("<span class='tl-nodata'>").text(station.TeamId ? "No log recorded" : "Empty"));
+      track.append($("<span class='tl-nodata'>").text(station.TeamId ? "No log" : "Empty"));
     } else {
-      // Merge consecutive samples at the same connection level into a single segment.
+      // Merge consecutive samples at the same connection level into one segment.
       let start = 0;
       for (let j = 1; j <= samples.length; j++) {
         const done = j === samples.length || samples[j].Level !== samples[start].Level ||
@@ -847,41 +942,41 @@ const renderTimeline = function (timeline) {
 
     const stationEvents = timeline.Events.filter((event) => event.Station === station.Station && event.MatchTimeSec > 0);
     $.each(stationEvents.concat(fieldEvents), function (j, event) {
+      const description = `${formatEventTime(event)} ${event.Message}`;
       track.append(
         $("<button type='button' class='tl-marker'>").attr({
           "data-severity": event.Severity,
-          title: `${formatMatchTime(event)} ${event.Message}`,
-          "aria-label": `${formatMatchTime(event)} ${event.Message}`,
+          "title": description,
+          "aria-label": description,
         }).css("left", percent(event.MatchTimeSec)).on("click", function () {
           const who = event.TeamId ? `${event.Station} ${event.TeamId}` : "Field";
-          $("#timelineDetail").text(`${who} · ${formatMatchTime(event)} · ${event.Message}`);
+          $("#timelineDetail").text(`${who} at ${formatEventTime(event)}: ${event.Message}`);
         }),
       );
     });
     lane.append(track);
 
     if (station.TeamId) {
-      const stats = $("<div class='tl-stats'>");
       const parts = [];
       if (station.Stats) {
         if (station.Stats.MinBatteryVoltage > 0) {
           parts.push(`min ${station.Stats.MinBatteryVoltage.toFixed(1)}V`);
         }
         parts.push(`down ${Math.round(station.Stats.RobotDownSec)}s`);
-        parts.push(`${station.Stats.FaultCount} fault${station.Stats.FaultCount === 1 ? "" : "s"}`);
+        parts.push(plural(station.Stats.FaultCount, "fault"));
       }
-      stats.text(parts.join(" · ") + (parts.length ? " · " : ""));
+      const stats = $("<div class='tl-stats'>").text(parts.join(", "));
       if (samples.length > 0) {
-        stats.append($("<a target='_blank'>").attr("href", station.LogUrl).text("full log"));
+        stats.append(parts.length ? " " : "", $("<a target='_blank'>").attr("href", station.LogUrl).text("Log"));
       }
       lane.append($("<span>"), stats);
     }
     container.append(lane);
   });
-  $("#timelineDetail").text(timeline.Events.length ? "Tap a marker for details." : "No faults logged in this match.");
+  $("#timelineDetail").text(timeline.Events.length ? "Select a marker for details." : "No faults logged.");
 };
 
-// Draws the battery voltage (6-13V) across the lane, breaking the line wherever the robot wasn't reporting.
+// Draws the battery voltage (6-13V) across the lane, with gaps where the robot wasn't reporting.
 const batterySparkline = function (samples, duration) {
   const svgNs = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNs, "svg");
@@ -910,7 +1005,7 @@ const batterySparkline = function (samples, duration) {
   return svg;
 };
 
-// ---------- Watchlist ----------
+// Watchlist: up next and teams
 
 const loadWatchlist = function () {
   fetchJson("/api/fta/watchlist").then(function (data) {
@@ -935,17 +1030,15 @@ const reasonItem = function (reason) {
 
 const renderUpnext = function () {
   const list = $("#upnextList").empty();
-  // Count each flagged team once, even if it's queued for more than one of the upcoming matches.
+  // Count each flagged team once, even if it's in more than one of the upcoming matches.
   const flaggedTeams = new Set();
   $.each(watchlist.Upcoming, function (i, match) {
-    const item = $("<li class='upnext-match'>");
-    const header = $("<header>").append($("<strong>").text(match.ShortName));
+    const header = $("<header>").text(match.ShortName);
     const time = new Date(match.Time);
     if (time.getFullYear() > 1) {
       header.append($("<span>").text(time.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})));
     }
-    item.append(header);
-    const grid = $("<div class='upnext-teams'>");
+    const grid = $("<div class='upnext-teams slots'>");
     $.each(match.Stations, function (j, station) {
       const summary = teamSummaries.get(station.TeamId);
       if (summary && summary.Risk === "bad") {
@@ -953,29 +1046,27 @@ const renderUpnext = function () {
       }
       grid.append(upnextTeam(station, summary));
     });
-    list.append(item.append(grid));
+    list.append($("<li class='upnext-match'>").append(header, grid));
   });
-  $("#upnextEmpty").toggle(watchlist.Upcoming.length === 0);
-  const flagged = flaggedTeams.size;
-  $("#upnextCount").text(flagged).attr("data-count", flagged).attr("data-severity", flagged > 0 ? "bad" : "");
+  $("#upnextEmpty").prop("hidden", watchlist.Upcoming.length > 0);
+  $("#upnextCount").text(flaggedTeams.size).prop("hidden", flaggedTeams.size === 0)
+    .attr("data-severity", flaggedTeams.size > 0 ? "bad" : "");
 };
 
 const upnextTeam = function (station, summary) {
-  const button = $("<button type='button' class='upnext-team'>").attr("data-alliance", allianceOf(station.Station));
-  button.append(stationChip(station.Station));
+  const button = $("<button type='button' class='upnext-team'>").attr("data-station", station.Station)
+    .append(stationChip(station.Station));
   if (!station.TeamId) {
     return button.prop("disabled", true).append($("<span class='team-id'>").text("TBD"));
   }
-  button.attr("data-risk", summary ? summary.Risk : "good")
-    .append($("<span class='team-id'>").text(station.TeamId));
+  button.attr("data-risk", summary ? summary.Risk : "good").append($("<span class='team-id'>").text(station.TeamId));
   const detail = $("<span class='upnext-detail'>");
   if (summary && summary.Reasons.length > 0) {
-    detail.text(summary.Reasons[0].Message + (summary.Reasons.length > 1 ? ` +${summary.Reasons.length - 1}` : ""));
+    detail.text(summary.Reasons.map((reason) => reason.Message).join("; "));
   } else if (summary && summary.FtaNotes) {
-    detail.addClass("has-note").text(summary.FtaNotes);
+    detail.text(summary.FtaNotes);
   }
-  button.append(detail);
-  return button.on("click", function () {
+  return button.append(detail).on("click", function () {
     openTeamPanel(station.TeamId);
   });
 };
@@ -988,7 +1079,7 @@ const setTeamFilter = function (filter) {
   renderTeams();
 };
 
-// Returns the teams matching the search, or the flagged teams if there's no search.
+// Returns the teams matching the search or, with no search, the current filter.
 const filteredTeams = function () {
   if (watchlist === null) {
     return [];
@@ -1004,43 +1095,43 @@ const filteredTeams = function () {
 
 const renderTeams = function () {
   const shown = filteredTeams();
-  const list = $("#teamList").empty();
-  $.each(shown, function (i, summary) {
-    list.append($("<li>").append(teamRow(summary)));
-  });
+  $("#teamList").empty().append(shown.map((summary) => $("<li>").append(teamRow(summary))));
   const searching = $("#teamSearch").val().trim() !== "";
-  $("#teamsEmpty").text(searching ? "No teams match." : "No teams flagged. Nice.").toggle(shown.length === 0);
+  $("#teamsEmpty").text(searching ? "No matching teams." : "No flagged teams.")
+    .prop("hidden", shown.length > 0);
 };
 
 const teamRow = function (summary) {
   const row = $("<button type='button' class='team-row'>").attr("data-risk", summary.Risk);
-  const head = $("<div class='team-row-head'>")
-    .append($("<strong>").text(summary.TeamId), $("<span class='team-row-name'>").text(summary.Nickname || ""));
   const stats = [`${summary.MatchesPlayed} played`];
   if (summary.FaultCount > 0) {
-    stats.push(`${summary.FaultCount} fault${summary.FaultCount === 1 ? "" : "s"}`);
+    stats.push(plural(summary.FaultCount, "fault"));
   }
   if (summary.MinBatteryVoltage > 0) {
     stats.push(`min ${summary.MinBatteryVoltage.toFixed(1)}V`);
   }
-  head.append($("<span class='team-row-stats'>").text(stats.join(" · ")));
-  row.append(head);
+  row.append($("<div class='team-row-head'>").append(
+    $("<strong>").text(summary.TeamId),
+    $("<span class='team-row-name'>").text(summary.Nickname || ""),
+    $("<span class='team-row-stats'>").text(stats.join(", ")),
+  ));
   if (summary.Reasons.length > 0) {
-    row.append($("<ul class='reason-list'>").append(summary.Reasons.map(reasonItem)));
+    row.append($("<ul class='reasons'>").append(summary.Reasons.map(reasonItem)));
   }
   if (summary.FtaNotes) {
-    row.append($("<p class='pinned-note'>").text(summary.FtaNotes));
+    row.append($("<p class='team-row-pinned'>").text(summary.FtaNotes));
   }
   if (summary.LastNote) {
-    const where = summary.LastNote.MatchShortName ? `${summary.LastNote.MatchShortName} ` : "";
-    row.append($("<p class='team-row-note'>").text(`${where}${summary.LastNote.Tag}: ${summary.LastNote.Text}`));
+    const note = summary.LastNote;
+    const prefix = [note.MatchShortName, noteTagLabels[note.Tag] || note.Tag].filter(Boolean).join(" ");
+    row.append($("<p class='team-row-note'>").text(`${prefix}: ${note.Text}`));
   }
   return row.on("click", function () {
     openTeamPanel(summary.TeamId);
   });
 };
 
-// Enter in the search box opens the top result, or any team number typed in full even if it isn't listed.
+// Enter opens the top result, or any full team number even if it isn't listed.
 const teamSearchKeydown = function (event) {
   if (event.key !== "Enter") {
     return;
@@ -1055,7 +1146,7 @@ const teamSearchKeydown = function (event) {
   }
 };
 
-// ---------- Match info ----------
+// Match info
 
 const handleMatchLoad = function (data) {
   currentMatchName = data.Match.LongName;
@@ -1071,14 +1162,23 @@ const handleMatchTime = function (data) {
 };
 
 $(function () {
-  try {
-    alertsEnabled = localStorage.getItem("ftaAlerts") === "true";
-    const savedTab = localStorage.getItem("ftaTab");
-    showTab(tabIds.includes(savedTab) ? savedTab : "field");
-  } catch (e) {
-    showTab("field");
-  }
+  alertsEnabled = readSetting("ftaAlerts") === "true";
   applyAlertSetting();
+  setSwap(readSetting("ftaSwap") === "true");
+  setFieldOnly(readSetting("ftaFieldOnly") === "true" && wideLayout.matches);
+  const savedTab = readSetting("ftaTab");
+  showTab(sideTabs.includes(savedTab) ? savedTab : "field");
+  wideLayout.addEventListener("change", function () {
+    showTab($("body").attr("data-tab"));
+  });
+
+  $("#noteTag option").each(function () {
+    $(this).text(noteTagLabels[$(this).val()] || $(this).val());
+  });
+  $("#noteTag").val("other");
+  $(".quick-notes button").on("click", function () {
+    quickNote(this);
+  });
 
   $(".station").on("click", function () {
     openStation($(this).attr("data-station"));
@@ -1093,9 +1193,23 @@ $(function () {
     $("#savePinnedNotes").prop("disabled", $(this).val() === $(this).attr("data-saved"));
   });
 
+  // Close the options menu and blocker list when tapping anywhere else.
+  $(document).on("click", function (event) {
+    if (!$(event.target).closest("#optionsMenu, #optionsButton").length) {
+      toggleOptions(false);
+    }
+    if (!$(event.target).closest("#status").length) {
+      toggleBlockers(false);
+    }
+  });
+
   $(document).on("keydown", function (event) {
-    if (event.key === "Escape" && openTeamId !== null) {
-      closeTeamPanel();
+    if (event.key === "Escape") {
+      if (openTeamId !== null) {
+        closeTeamPanel();
+      }
+      toggleOptions(false);
+      toggleBlockers(false);
       return;
     }
     if ($(event.target).is("textarea, input, select") || event.ctrlKey || event.metaKey || event.altKey) {
@@ -1105,25 +1219,24 @@ $(function () {
     if (stationIndex >= 0 && stationIndex < stationIds.length) {
       openStation(stationIds[stationIndex]);
     } else if (event.key === "f") {
-      showTab("faults");
+      openSideTab("faults");
+    } else if (event.key === "u") {
+      openSideTab("upnext");
     } else if (event.key === "t") {
-      showTab("timeline");
+      openSideTab("timeline");
     } else if (event.key === "r") {
       toggleFtaReady();
-    } else if (event.key === "u") {
-      showTab("upnext");
     } else if (event.key === "/") {
       event.preventDefault();
-      showTab("teams");
+      openSideTab("teams");
       $("#teamSearch").trigger("focus").trigger("select");
     }
   });
 
   setInterval(function () {
-    stationIds.forEach(renderWait);
+    stationIds.forEach(renderStationLine);
   }, 1000);
 
-  // Set up the websocket back to the server.
   websocket = new CheesyWebsocket("/fta/websocket", {
     arenaStatus: function (event) {
       handleArenaStatus(event.data);
