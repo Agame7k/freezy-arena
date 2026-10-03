@@ -67,6 +67,14 @@ func NewWeb(arena *field.Arena) *Web {
 		"toUpper": func(str string) string {
 			return strings.ToUpper(str)
 		},
+		// Turns an identifier like "pick_clock_expired" into a label like "Pick Clock Expired".
+		"humanize": func(str string) string {
+			words := strings.Fields(strings.ReplaceAll(str, "_", " "))
+			for i, word := range words {
+				words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
+			}
+			return strings.Join(words, " ")
+		},
 
 		// MatchType enum values.
 		"testMatch":          model.Test.Get,

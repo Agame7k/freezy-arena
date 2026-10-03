@@ -26,7 +26,7 @@ const handleEventStatus = function (data) {
 
 // Handles a websocket message to update the teams for the current match.
 var handleMatchLoad = function (data) {
-  $("#matchName").text(data.Match.LongName);
+  $("#matchName").text(data.Match.LongName + (data.Match.NameDetail ? " – " + data.Match.NameDetail : ""));
 
   const teams = $("#teams");
   teams.empty();

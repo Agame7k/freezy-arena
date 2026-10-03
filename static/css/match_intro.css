@@ -1,0 +1,382 @@
+/*
+  Copyright 2026 Team 254. All Rights Reserved.
+*/
+
+/* Full-screen match intro shared by the audience and wall displays: the two alliances face off across a diagonal
+   seam before the display's own intro takes over (see match_intro.js). Everything starts off screen or invisible; the
+   motion itself is driven from JS. Sizes use min() of both viewport axes so it holds up on any screen shape. */
+#matchIntro {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 90;
+  overflow: hidden;
+  font-family: "FuturaLTBold";
+  color: #fff;
+}
+
+.match-intro-side {
+  /* Oversized past the screen edges so the impact shake never uncovers the background behind. */
+  position: absolute;
+  top: -40px;
+  bottom: -40px;
+  width: calc(50% + 7vh + 40px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5vh;
+  background-color: #1e5b99;
+  transform: translateX(-105%);
+}
+
+.match-intro-side[data-alliance=red] {
+  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.04) 0 2px, transparent 2px 26px),
+    radial-gradient(ellipse at 30% 50%, #c22a4b, #5c1027 75%);
+  background-size: 200% 100%, 100% 100%;
+}
+
+.match-intro-side[data-alliance=blue] {
+  background: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.04) 0 2px, transparent 2px 26px),
+    radial-gradient(ellipse at 70% 50%, #2466c2, #0d2c57 75%);
+  background-size: 200% 100%, 100% 100%;
+}
+
+#matchIntro[data-playing] .match-intro-side {
+  animation: match-intro-stripes 6s linear infinite;
+}
+
+@keyframes match-intro-stripes {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: -300px 0, 0 0; }
+}
+
+#matchIntroLeft {
+  left: -40px;
+  padding: 0 calc(7vh + 13vw) 0 calc(6vw + 40px);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14vh) 100%, 0 100%);
+}
+
+#matchIntroRight {
+  right: -40px;
+  padding: 0 calc(6vw + 40px) 0 calc(7vh + 13vw);
+  align-items: flex-end;
+  text-align: right;
+  clip-path: polygon(14vh 0, 100% 0, 100% 100%, 0 100%);
+  transform: translateX(105%);
+}
+
+/* A bright line of light running down the seam where the two sides meet. The outer box is what gets wiped in from the
+   top; the line inside is clipped to the diagonal. */
+#matchIntroSeam {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  width: 100%;
+  height: calc(100% + 80px);
+  opacity: 0;
+}
+
+.match-intro-seam-line {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #fff, #ffd166 50%, #fff);
+  clip-path: polygon(calc(50% + 7vh - 3px) 0, calc(50% + 7vh + 3px) 0, calc(50% - 7vh + 3px) 100%,
+    calc(50% - 7vh - 3px) 100%);
+}
+
+.match-intro-alliance {
+  display: flex;
+  align-items: center;
+  gap: 1.6vh;
+  font-size: min(3.4vh, 2.4vw);
+  white-space: nowrap;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  opacity: 0;
+}
+
+#matchIntroRight .match-intro-alliance {
+  flex-direction: row-reverse;
+}
+
+.match-intro-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 4vh;
+}
+
+.match-intro-team {
+  display: flex;
+  align-items: center;
+  gap: 2.5vh;
+  opacity: 0;
+}
+
+#matchIntroRight .match-intro-team {
+  flex-direction: row-reverse;
+}
+
+.match-intro-avatar {
+  width: min(11vh, 7vw);
+  height: min(11vh, 7vw);
+  image-rendering: pixelated;
+  flex-shrink: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 0.6vh 1.6vh rgba(0, 0, 0, 0.4));
+}
+
+.match-intro-number {
+  font-size: min(8.5vh, 5.5vw);
+  white-space: nowrap;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0.6vh 2.4vh rgba(0, 0, 0, 0.45);
+}
+
+.match-intro-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4vh;
+  min-width: 0;
+}
+
+#matchIntroRight .match-intro-info {
+  align-items: flex-end;
+}
+
+.match-intro-meta {
+  display: flex;
+  align-items: center;
+  gap: 1.2vh;
+}
+
+#matchIntroRight .match-intro-meta {
+  flex-direction: row-reverse;
+}
+
+.match-intro-number-row {
+  display: flex;
+  align-items: center;
+  gap: 1.6vh;
+}
+
+#matchIntroRight .match-intro-number-row {
+  flex-direction: row-reverse;
+}
+
+/* A team carrying a yellow card gets a little card beside its number. */
+.match-intro-yellow-card {
+  width: min(3.4vh, 2.2vw);
+  height: min(4.8vh, 3.1vw);
+  flex-shrink: 0;
+  border: 0.3vh solid rgba(0, 0, 0, 0.25);
+  border-radius: 0.5vh;
+  background: linear-gradient(135deg, #ffe066, #fcc419);
+  box-shadow: 0 0 1.6vh rgba(255, 212, 59, 0.75), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.4);
+  transform: rotate(-10deg);
+  opacity: 0;
+}
+
+.match-intro-nickname {
+  max-width: 34vw;
+  overflow: hidden;
+  font-size: min(3.6vh, 2.4vw);
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-intro-location {
+  color: rgba(255, 255, 255, 0.72);
+  font-family: "FuturaLT";
+  font-size: min(2.3vh, 1.6vw);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.match-intro-rank {
+  padding: 0.3vh 1.6vh;
+  background: rgba(0, 0, 0, 0.35);
+  clip-path: polygon(0.8vh 0, 100% 0, calc(100% - 0.8vh) 100%, 0 100%);
+  color: #ffd166;
+  font-size: min(1.9vh, 1.4vw);
+  letter-spacing: 0.08em;
+}
+
+#matchIntroParticles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#matchIntroEvent, #matchIntroMatchName {
+  position: absolute;
+  left: 50%;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  padding: 0.8vh 4vh;
+  background: rgba(5, 10, 20, 0.8);
+  clip-path: polygon(1.6vh 0, 100% 0, calc(100% - 1.6vh) 100%, 0 100%);
+  font-size: min(2.6vh, 1.8vw);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0;
+}
+
+#matchIntroEvent {
+  top: 6vh;
+}
+
+#matchIntroMatchName {
+  bottom: 6vh;
+  color: #ffd166;
+}
+
+#matchIntroVs {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #ffd166;
+  font-size: min(22vh, 15vw);
+  font-style: italic;
+  line-height: 1;
+  text-shadow: 0 0.6vh 0 #0b1728, 0 1.4vh 3vh rgba(0, 0, 0, 0.55);
+  opacity: 0;
+}
+
+#matchIntroFlash {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Card glyphs other than the yellow one, for the result view. */
+.match-intro-yellow-card[data-card=red] {
+  background: linear-gradient(135deg, #ff6b6b, #e03131);
+  box-shadow: 0 0 1.6vh rgba(255, 70, 70, 0.75), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.4);
+}
+
+.match-intro-yellow-card[data-card=dq] {
+  background: #111;
+  border-color: #e03131;
+  box-shadow: 0 0 1.6vh rgba(255, 70, 70, 0.6), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.4);
+}
+
+/* Result view: each side leads with its final score, and the side that lost fades back a little. */
+.match-intro-score {
+  color: #fff;
+  font-size: min(16vh, 10vw);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 1vh 2.4vh rgba(0, 0, 0, 0.4);
+  opacity: 0;
+}
+
+#matchIntro[data-view=result] .match-intro-side {
+  gap: 2.5vh;
+}
+
+#matchIntro[data-view=result] .match-intro-side[data-result=lost] .match-intro-teams,
+#matchIntro[data-view=result] .match-intro-side[data-result=lost] .match-intro-score {
+  filter: saturate(0.6) brightness(0.8);
+}
+
+#matchIntro[data-view=result] #matchIntroVs {
+  font-size: min(12vh, 8vw);
+}
+
+.match-intro-pills {
+  display: flex;
+  gap: 1.2vh;
+  margin-top: -1vh;
+}
+
+.match-intro-pills:empty {
+  display: none;
+}
+
+#matchIntroRight .match-intro-pills {
+  flex-direction: row-reverse;
+}
+
+.match-intro-verdict, .match-intro-card-pill {
+  padding: 0.4vh 2.2vh;
+  font-size: min(2.2vh, 1.5vw);
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  clip-path: polygon(1vh 0, 100% 0, calc(100% - 1vh) 100%, 0 100%);
+}
+
+.match-intro-verdict {
+  background: #ffd166;
+  color: #0b1728;
+}
+
+.match-intro-card-pill[data-card=yellow] {
+  background: #fcc419;
+  color: #0b1728;
+}
+
+.match-intro-card-pill[data-card=red] {
+  background: #e03131;
+  color: #fff;
+}
+
+.match-intro-card-pill[data-card=dq] {
+  background: #111;
+  border: 0.25vh solid #e03131;
+  color: #fff;
+}
+
+.match-intro-destination {
+  color: rgba(255, 255, 255, 0.8);
+  font-family: "FuturaLT";
+  font-size: min(2.4vh, 1.7vw);
+  letter-spacing: 0.06em;
+  opacity: 0;
+}
+
+/* A team with a red card or DQ is struck through, dimmed, with a line drawing across its number once it lands. */
+.match-intro-number {
+  position: relative;
+}
+
+.match-intro-team[data-red-card=true] .match-intro-number {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.match-intro-team[data-red-card=true] .match-intro-avatar {
+  opacity: 0.5;
+}
+
+.match-intro-team[data-red-card=true] .match-intro-number::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -0.08em;
+  right: -0.08em;
+  height: 0.09em;
+  margin-top: -0.045em;
+  border-radius: 0.05em;
+  background: #111;
+  box-shadow: 0 0 0 0.12vh rgba(255, 255, 255, 0.7);
+  transform: rotate(-8deg);
+  animation: match-intro-strike 450ms cubic-bezier(0.16, 1, 0.3, 1) 1.5s both;
+}
+
+@keyframes match-intro-strike {
+  from { transform: rotate(-8deg) scaleX(0); }
+  to { transform: rotate(-8deg) scaleX(1); }
+}

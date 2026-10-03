@@ -586,10 +586,18 @@ func (arena *Arena) AbortMatch() error {
 	arena.MatchState = PostMatch
 	arena.matchAborted = true
 	arena.matchStopTime = time.Now()
+	// Announce the abort before blanking the audience display, so that it can play its abort sequence over the match
+	// bar before taking the bar down.
+	arena.MatchTimeNotifier.Notify()
 	arena.SetAudienceDisplayMode("blank")
 	go arena.BlackmagicClient.StopRecording()
 	go arena.CompanionClient.SendEvent(partner.EventMatchAbort)
 	return nil
+}
+
+// Returns whether the current match was ended early by an abort; stays true until the match is reset.
+func (arena *Arena) MatchAborted() bool {
+	return arena.matchAborted
 }
 
 // Clears out the match and resets the arena state unless there is a match underway.
@@ -1599,6 +1607,15 @@ func (arena *Arena) AutomateAudienceDisplay(postedMatch *model.Match) {
 			if arena.AudienceDisplayMode != "bracket" {
 				return
 			}
+		}
+	}
+
+	// After a qualification match, show where everyone now stands before moving on.
+	if postedMatch.Type == model.Qualification {
+		arena.SetAudienceDisplayMode("standings")
+		time.Sleep(20 * time.Second)
+		if arena.AudienceDisplayMode != "standings" {
+			return
 		}
 	}
 

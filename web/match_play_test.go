@@ -363,7 +363,11 @@ func TestMatchPlayWebsocketCommands(t *testing.T) {
 	ws.Write("discardResults", nil)
 	assert.Contains(t, readWebsocketError(t, ws), "cannot reset match while it is in progress")
 	ws.Write("abortMatch", nil)
-	readWebsocketType(t, ws, "audienceDisplayMode")
+	abortMessages := readWebsocketMultiple(t, ws, 2)
+	assert.Contains(t, abortMessages, "audienceDisplayMode")
+	if assert.Contains(t, abortMessages, "matchTime") {
+		assert.Equal(t, true, abortMessages["matchTime"].(map[string]any)["MatchAborted"])
+	}
 	assert.Equal(t, field.PostMatch, web.arena.MatchState)
 	web.arena.RedRealtimeScore.CurrentScore.EndgameTowerStatuses = [3]game.TowerStatus{
 		game.TowerLevel1, game.TowerLevel2, game.TowerNone,

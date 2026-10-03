@@ -1,0 +1,80 @@
+/*
+  The qualification standings table shared by the audience and wall displays; see standings_table.js. Each display
+  positions the panel itself. Uses the same navy-and-gold table as the standalone rankings display.
+*/
+
+.standings-panel {
+  overflow: hidden;
+  border-radius: 10px;
+  background: #f8fafc;
+  box-shadow: var(--panel-shadow);
+}
+.standings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 16px 28px 12px;
+  background: var(--navy);
+  color: #fff;
+  font-family: "FuturaLTBold";
+  font-size: 34px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.standings-as-of {
+  color: var(--gold);
+  font-size: 20px;
+  letter-spacing: 0.1em;
+}
+.standings-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.standings-table th {
+  padding: 10px 0;
+  background: #122239;
+  color: var(--gold);
+  font-family: "FuturaLTBold";
+  font-size: 17px;
+  font-weight: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.standings-table td {
+  height: 50px;
+  font-family: "FuturaLT";
+  font-size: 26px;
+}
+.standings-table td:nth-child(1),
+.standings-table td:nth-child(2) {
+  font-family: "FuturaLTBold";
+}
+.standings-table tbody tr:nth-child(even) {
+  background: #e9eef5;
+}
+.standings-table .standings-name {
+  width: 36%;
+  padding-left: 12px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.standings-table .standings-empty {
+  height: 160px;
+  color: #4a5568;
+  font-size: 28px;
+}
+.standings-footer {
+  padding: 8px 28px;
+  color: #4a5568;
+  font-size: 17px;
+  text-align: right;
+}
+.standings-footer:empty {
+  display: none;
+}

@@ -13,7 +13,7 @@ UI for testing the game sounds and the LEDs and PLC connected to the field.
       {{range $sound := .MatchSounds}}
       <p>
         <button type="button" class="btn btn-sm btn-primary btn-game-sound" onclick="playSound('{{$sound.Name}}');">
-          <i class="bi-play-fill"></i>&nbsp;&nbsp;{{toUpper $sound.Name}}
+          <i class="bi-play-fill"></i>&nbsp;&nbsp;{{humanize $sound.Name}}
         </button>
       </p>
       {{end}}

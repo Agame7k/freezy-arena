@@ -8,6 +8,8 @@ let redFoulsHashCode = 0;
 let blueFoulsHashCode = 0;
 let scoreIsReady = false;
 let isPostMatch = false;
+// In playoffs a card is given to the whole alliance: pressing any team's card button cards all three.
+let isPlayoffMatch = false;
 
 // Sends the foul to the server to add it to the list.
 const addFoul = function (alliance, isMajor) {
@@ -103,6 +105,7 @@ var commitAndPost = function () {
 // Handles a websocket message to update the teams for the current match.
 var handleMatchLoad = function (data) {
   $("#matchName").text(data.Match.LongName);
+  isPlayoffMatch = data.Match.Type === matchTypePlayoff;
 
   setTeamCard("red", 1, data.Teams["R1"]);
   setTeamCard("red", 2, data.Teams["R2"]);
@@ -124,7 +127,7 @@ const handleMatchTime = function (data) {
   isPostMatch = matchStates[data.MatchState] === "POST_MATCH";
   $(".control-button:not(#ftaReadyButton)").attr("data-enabled", isPostMatch);
 
-  let title = "Red/Yellow Cards";
+  let title = isPlayoffMatch ? "Alliance Red/Yellow Cards" : "Red/Yellow Cards";
   if(!isPostMatch) {
     title = matchStates[data.MatchState] === "PRE_MATCH" ? "Bypass" : "Disable";
   }

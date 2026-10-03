@@ -18,6 +18,84 @@
       return "/api/teams/" + teamId + "/avatar";
     },
 
+    // Scales a page laid out in fixed pixels for a 1920x1080 screen so that it fits whatever screen it's shown on. It
+    // zooms by whichever of width and height is tighter, so on a screen of a different shape the layout gets extra room
+    // along the other axis rather than being cropped or letterboxed, and edge-anchored elements stay on their edges.
+    // Layers sized in viewport units already fit any screen; they undo the zoom by reading --stage-zoom.
+    fitStage: function () {
+      const fit = function () {
+        const zoom = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        document.documentElement.style.zoom = zoom;
+        document.documentElement.style.setProperty("--stage-zoom", zoom);
+      };
+      fit();
+      window.addEventListener("resize", fit);
+    },
+
+    // Returns the points in a live score summary that are worth calling out as they happen, by the label to call them
+    // out with. Fuel isn't among them: it scores almost continuously, so it just moves the number. Teleop tower points
+    // aren't either, since they're only added after the match.
+    getCalloutPoints: function (scoreSummary) {
+      return {TOWER: scoreSummary.AutoTowerPoints, FOUL: scoreSummary.FoulPoints};
+    },
+
+    // Returns a function that calls out a batch of points on one side's score, such as a climb or foul points: the number
+    // punches and flashes gold, and a chip like "+15 TOWER" floats off it. More of the same kind landing within a moment
+    // is added into the same chip rather than stacking up new ones. It's meant for discrete events only; fuel scores
+    // almost continuously and would have it firing constantly. floatsDown picks which way the chips drift, away from the
+    // nearest screen edge.
+    createScorePopper: function (floatsDown) {
+      const chips = {};
+      const easeIn = "cubic-bezier(0.16, 1, 0.3, 1)";
+      return function (side, points, label) {
+        const number = document.getElementById(`${side}ScoreNumber`);
+        if (number === null || points <= 0) {
+          return;
+        }
+        number.animate([
+          {transform: "scale(1)", color: "#fff"},
+          {transform: "scale(1.25)", color: "#ffd166", offset: 0.25},
+          {transform: "scale(1)", color: "#fff"},
+        ], {duration: 500, easing: easeIn});
+
+        const now = Date.now();
+        let chip = chips[side];
+        if (chip !== undefined && chip.label === label && now - chip.startedAt < 900 && chip.element.isConnected) {
+          chip.points += points;
+          chip.animation.cancel();
+        } else {
+          if (chip !== undefined) {
+            chip.element.remove();
+          }
+          // Nudged outwards from the middle of the screen, to keep clear of whatever sits on the match circle.
+          const rect = number.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const outward = centerX < window.innerWidth / 2 ? -1 : 1;
+          const element = document.createElement("div");
+          element.className = "score-chip";
+          element.style.left = centerX + outward * rect.width * 0.2 + "px";
+          element.style.top = (floatsDown ? rect.bottom - 10 : rect.top - 30) + "px";
+          document.body.appendChild(element);
+          chip = {element: element, points: points, label: label};
+          chips[side] = chip;
+        }
+        chip.startedAt = now;
+        chip.element.textContent = `+${chip.points}`;
+        $("<span class='score-chip-label'>").text(label).appendTo(chip.element);
+        const drift = floatsDown ? 1 : -1;
+        chip.animation = chip.element.animate([
+          {opacity: 0, transform: "translate(-50%, 0px) scale(0.5)"},
+          {opacity: 1, transform: `translate(-50%, ${drift * 14}px) scale(1.1)`, offset: 0.15},
+          {opacity: 1, transform: `translate(-50%, ${drift * 26}px) scale(1)`, offset: 0.7},
+          {opacity: 0, transform: `translate(-50%, ${drift * 44}px) scale(1)`},
+        ], {duration: 1300, easing: "cubic-bezier(0.25, 0.8, 0.4, 1)", fill: "forwards"});
+        const finishedChip = chip;
+        chip.animation.onfinish = function () {
+          finishedChip.element.remove();
+        };
+      };
+    },
+
     handleMatchLoad: function (data, redSide, blueSide) {
       const currentMatch = data.Match;
       $(`#${redSide}Team1`).text(currentMatch.Red1);
@@ -44,6 +122,16 @@
         $(`#${blueSide}PlayoffAlliance`).text(currentMatch.PlayoffBlueAlliance);
         $(".playoff-alliance").show();
 
+        // In playoffs a yellow card belongs to the whole alliance, so it's flagged once with a glyph on the alliance's
+        // team column rather than on each team.
+        [[redSide, ["R1", "R2", "R3"]], [blueSide, ["B1", "B2", "B3"]]].forEach(function ([side, stations]) {
+          const allianceCarded = stations.some(function (station) {
+            return data.Teams[station]?.YellowCard;
+          });
+          $(`#${side}Teams`).attr("data-alliance-card", allianceCarded ? "yellow" : null);
+          $(`#${side}Teams > div`).attr("data-yellow-card", false);
+        });
+
         if (data.Matchup.NumWinsToAdvance > 1) {
           $(`#${redSide}PlayoffAllianceWins`).text(data.Matchup.RedAllianceWins);
           $(`#${blueSide}PlayoffAllianceWins`).text(data.Matchup.BlueAllianceWins);
@@ -55,6 +143,7 @@
         $(`#${redSide}PlayoffAlliance`).text("");
         $(`#${blueSide}PlayoffAlliance`).text("");
         $(".playoff-alliance").hide();
+        $(".teams").removeAttr("data-alliance-card");
         $("#playoffSeriesStatus").hide();
       }
 

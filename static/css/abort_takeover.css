@@ -1,0 +1,374 @@
+/*
+  The "match aborted" takeover shared by the audience, field monitor and alliance station displays; see
+  abort_takeover.js. data-state is "intro" while the abort lands and "hold" until the match is reset.
+*/
+
+.abort-takeover {
+  position: fixed;
+  inset: 0;
+  display: none;
+  overflow: hidden;
+  color: #fff;
+  font-family: "FuturaLTBold";
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 2000;
+}
+.abort-takeover[data-state=intro],
+.abort-takeover[data-state=hold] {
+  display: block;
+}
+
+/* Strobe and shockwave ---------------------------------------------------------------------------------------------- */
+
+.abort-strobe {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 40, 60, 0.35), rgba(214, 40, 63, 0.95));
+  opacity: 0;
+}
+.abort-takeover[data-state=intro] .abort-strobe {
+  animation: abort-strobe 1100ms linear both;
+}
+/* Once held, the strobe settles into a slow red throb in from the edges of the screen. */
+.abort-takeover[data-state=hold] .abort-strobe {
+  background: none;
+  box-shadow: inset 0 0 12vw 2vw rgba(214, 40, 63, 0.85);
+  animation: abort-throb 1.6s ease-in-out infinite;
+}
+@keyframes abort-strobe {
+  0% {
+    opacity: 1;
+  }
+  9% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.9;
+  }
+  27% {
+    opacity: 0;
+  }
+  36% {
+    opacity: 0.75;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+@keyframes abort-throb {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.abort-shockwave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40vmin;
+  height: 40vmin;
+  margin: -20vmin 0 0 -20vmin;
+  border: 3vmin solid #ffd166;
+  border-radius: 50%;
+  opacity: 0;
+}
+.abort-takeover[data-state=intro] .abort-shockwave {
+  animation: abort-shockwave 1000ms cubic-bezier(0.16, 1, 0.3, 1) 150ms both;
+}
+@keyframes abort-shockwave {
+  from {
+    opacity: 1;
+    transform: scale(0.2);
+    border-width: 5vmin;
+  }
+  to {
+    opacity: 0;
+    transform: scale(5);
+    border-width: 0.3vmin;
+  }
+}
+
+/* Banner ------------------------------------------------------------------------------------------------------------ */
+
+/* Overhangs the screen a little so its ends never show while it shakes. */
+.abort-band {
+  position: absolute;
+  top: 50%;
+  left: -3%;
+  width: 106%;
+  transform: translateY(-50%);
+  transition: top 700ms cubic-bezier(0.65, 0, 0.35, 1), transform 700ms cubic-bezier(0.65, 0, 0.35, 1);
+}
+.abort-band-inner {
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2vh 6vh rgba(0, 0, 0, 0.55);
+}
+/* Slams down from larger than life, then shakes from the impact. */
+.abort-takeover[data-state=intro] .abort-band-inner {
+  animation: abort-slam 550ms cubic-bezier(0.55, 0, 1, 0.45) 100ms both, abort-shake 700ms linear 620ms;
+}
+@keyframes abort-slam {
+  0% {
+    opacity: 0;
+    transform: scale(1.9) rotate(-4deg);
+  }
+  75% {
+    opacity: 1;
+    transform: scale(0.96) rotate(0.6deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes abort-shake {
+  0%, 100% {
+    transform: none;
+  }
+  10% {
+    transform: translate(-1.6%, 12%) rotate(-1.2deg);
+  }
+  20% {
+    transform: translate(1.4%, -10%) rotate(1deg);
+  }
+  32% {
+    transform: translate(-1.1%, 7%) rotate(-0.6deg);
+  }
+  46% {
+    transform: translate(0.8%, -5%) rotate(0.4deg);
+  }
+  62% {
+    transform: translate(-0.4%, 3%);
+  }
+  80% {
+    transform: translate(0.2%, -1%);
+  }
+}
+
+.abort-hazard {
+  height: 2.4vh;
+  background: repeating-linear-gradient(-45deg, #ffd166 0 2vh, #111 2vh 4vh);
+  background-size: 5.657vh 5.657vh;
+  animation: abort-hazard 600ms linear infinite;
+  transition: height 700ms ease;
+}
+.abort-hazard:last-child {
+  animation-direction: reverse;
+}
+@keyframes abort-hazard {
+  to {
+    background-position: 5.657vh 0;
+  }
+}
+
+/* A highlight sweeps back and forth across the red. */
+.abort-band-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3vw;
+  padding: 2.4vh 0 2vh;
+  background: linear-gradient(90deg, #4a0a18, #d6283f 30%, #ff4760 50%, #d6283f 70%, #4a0a18);
+  background-size: 200% 100%;
+  animation: abort-sheen 2.4s ease-in-out infinite alternate;
+  transition: padding 700ms ease;
+}
+@keyframes abort-sheen {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
+}
+.abort-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.abort-title {
+  font-size: 7vw;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0.4vw 1.6vw rgba(0, 0, 0, 0.5);
+  transition: font-size 700ms ease;
+}
+/* Glitches in with a split red/cyan ghost that settles out. */
+.abort-takeover[data-state=intro] .abort-title {
+  animation: abort-glitch 900ms steps(1) 380ms both;
+}
+.abort-takeover[data-state=hold] .abort-title {
+  animation: abort-glow 1.6s ease-in-out infinite;
+}
+@keyframes abort-glitch {
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+    transform: translateX(0.5vw) skewX(-10deg);
+    text-shadow: -0.9vw 0 #00e5ff, 0.9vw 0 #ff1744;
+  }
+  14% {
+    transform: translateX(-0.6vw) skewX(8deg);
+    text-shadow: 0.7vw 0 #00e5ff, -0.7vw 0 #ff1744;
+  }
+  24% {
+    transform: none;
+    text-shadow: -0.5vw 0.2vw #00e5ff, 0.5vw -0.2vw #ff1744;
+  }
+  36% {
+    transform: translateX(0.3vw) skewX(-4deg);
+    text-shadow: 0.35vw 0 #00e5ff, -0.35vw 0 #ff1744;
+  }
+  50% {
+    transform: none;
+    text-shadow: -0.15vw 0 #00e5ff, 0.15vw 0 #ff1744;
+  }
+  66%, 100% {
+    opacity: 1;
+    transform: none;
+    text-shadow: 0 0.4vw 1.6vw rgba(0, 0, 0, 0.5);
+  }
+}
+@keyframes abort-glow {
+  0%, 100% {
+    text-shadow: 0 0.4vw 1.6vw rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    text-shadow: 0 0 2.2vw rgba(255, 209, 102, 0.95), 0 0.4vw 1.6vw rgba(0, 0, 0, 0.5);
+  }
+}
+
+.abort-subtitle {
+  margin-top: 1vh;
+  color: #ffe3e8;
+  font-size: 2vw;
+  letter-spacing: 0.3em;
+}
+.abort-subtitle:empty {
+  display: none;
+}
+.abort-takeover[data-state=intro] .abort-subtitle {
+  animation: abort-fade-up 500ms cubic-bezier(0.16, 1, 0.3, 1) 1000ms both;
+}
+@keyframes abort-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(60%);
+  }
+}
+
+/* Warning signs either side of the title; they spin in and then flash. */
+.abort-warning {
+  position: relative;
+  flex: none;
+  width: 6vw;
+  height: 5.2vw;
+  background: #ffd166;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  transition: width 700ms ease, height 700ms ease;
+}
+.abort-warning::after {
+  content: "!";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.1em;
+  color: #111;
+  font-size: 3.8vw;
+  line-height: 1;
+  text-align: center;
+  transition: font-size 700ms ease;
+}
+.abort-takeover[data-state=intro] .abort-warning {
+  animation: abort-spin-in 550ms cubic-bezier(0.34, 1.56, 0.64, 1) 700ms both;
+}
+.abort-takeover[data-state=hold] .abort-warning {
+  animation: abort-flash 1s steps(1) infinite;
+}
+@keyframes abort-spin-in {
+  from {
+    opacity: 0;
+    transform: scale(0) rotate(-200deg);
+  }
+}
+@keyframes abort-flash {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* Field monitor: dims the monitor while the abort lands, then docks a slim banner along the bottom so the station
+   statuses stay readable. */
+.abort-takeover[data-variant=monitor][data-state=intro] {
+  background: rgba(40, 0, 6, 0.7);
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-strobe,
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-shockwave {
+  display: none;
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-band {
+  top: 100%;
+  transform: translateY(-100%);
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-hazard {
+  height: 1vh;
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-band-body {
+  padding: 0.6vh 0;
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-title {
+  font-size: 3.4vw;
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-subtitle {
+  display: none;
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-warning {
+  width: 3vw;
+  height: 2.6vw;
+}
+.abort-takeover[data-variant=monitor][data-state=hold] .abort-warning::after {
+  font-size: 1.9vw;
+}
+
+/* Alliance station: takes over the whole screen on a field of scrolling red stripes, but only in match mode so that
+   field reset and other signals still come through. */
+.abort-takeover[data-variant=station][data-state=hold] {
+  background: repeating-linear-gradient(-45deg, #5a0a16 0 6vh, #36050e 6vh 12vh);
+  background-size: 16.97vh 16.97vh;
+  animation: abort-station-stripes 1.5s linear infinite;
+}
+@keyframes abort-station-stripes {
+  to {
+    background-position: 16.97vh 0;
+  }
+}
+/* Stacked on two lines so it can be read from behind the driver station. */
+.abort-takeover[data-variant=station] .abort-title {
+  max-width: 72vw;
+  font-size: 11vw;
+  line-height: 1.05;
+  text-align: center;
+  white-space: normal;
+}
+.abort-takeover[data-variant=station] .abort-warning {
+  width: 9vw;
+  height: 7.8vw;
+}
+.abort-takeover[data-variant=station] .abort-warning::after {
+  font-size: 5.6vw;
+}
+.abort-takeover[data-variant=station] .abort-subtitle {
+  font-size: 3vw;
+}
+body:not([data-mode=match]) .abort-takeover[data-variant=station] {
+  display: none;
+}

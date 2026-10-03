@@ -6,6 +6,7 @@
 var station = "";
 var blinkInterval;
 var currentScreen = "blank";
+var currentMatchName = "";
 var websocket;
 
 // Handles a websocket message to change which screen is displayed.
@@ -36,6 +37,7 @@ var handleAllianceStationDisplayMode = function (targetScreen) {
 
 // Handles a websocket message to update the team to display.
 var handleMatchLoad = function (data) {
+  currentMatchName = data.Match.LongName;
   if (station !== "") {
     var team = data.Teams[station];
     if (team) {
@@ -130,6 +132,9 @@ var handleMatchTime = function (data) {
     $("#timeRemaining").text(countdownString);
     $("#match").attr("data-state", matchState);
   });
+
+  // Take over the screen when the match is aborted, holding until it is reset.
+  AbortTakeover.update(data.MatchAborted === true, "station", currentMatchName);
 };
 
 // Handles a websocket message to play a sound to signal match start/stop/etc.

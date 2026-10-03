@@ -179,6 +179,42 @@ func (matchup *Matchup) IsComplete() bool {
 	return matchup.WinningAllianceId() > 0
 }
 
+// SeriesDescription returns where the series stands, naming alliances rather than colors (e.g. "Alliance 4 leads 1-0"),
+// and what is riding on the next match (e.g. "Loser is eliminated"), for announcers and audience graphics. Either may
+// be empty when there is nothing worth saying.
+func (matchup *Matchup) SeriesDescription() (string, string) {
+	var status string
+	redWins, blueWins := matchup.RedAllianceWins, matchup.BlueAllianceWins
+	if matchup.NumWinsToAdvance > 1 {
+		switch {
+		case redWins == 0 && blueWins == 0:
+			status = fmt.Sprintf("Best of %d", 2*matchup.NumWinsToAdvance-1)
+		case redWins > blueWins:
+			status = fmt.Sprintf("Alliance %d leads %d-%d", matchup.RedAllianceId, redWins, blueWins)
+		case blueWins > redWins:
+			status = fmt.Sprintf("Alliance %d leads %d-%d", matchup.BlueAllianceId, blueWins, redWins)
+		default:
+			status = fmt.Sprintf("Series tied %d-%d", redWins, blueWins)
+		}
+	}
+
+	// An alliance is on match point when one more win settles the series for it.
+	redOnMatchPoint := redWins == matchup.NumWinsToAdvance-1
+	blueOnMatchPoint := blueWins == matchup.NumWinsToAdvance-1
+	var stakes string
+	switch {
+	case matchup.isFinal() && redOnMatchPoint && blueOnMatchPoint:
+		stakes = "Winner takes the event"
+	case matchup.isFinal() && redOnMatchPoint:
+		stakes = fmt.Sprintf("Alliance %d can win the event", matchup.RedAllianceId)
+	case matchup.isFinal() && blueOnMatchPoint:
+		stakes = fmt.Sprintf("Alliance %d can win the event", matchup.BlueAllianceId)
+	case matchup.IsLosingAllianceEliminated() && redOnMatchPoint && blueOnMatchPoint:
+		stakes = "Loser is eliminated"
+	}
+	return status, stakes
+}
+
 // IsLosingAllianceEliminated returns true if the losing alliance is eliminated from the tournament.
 func (matchup *Matchup) IsLosingAllianceEliminated() bool {
 	return matchup.losingAllianceDestination == nil

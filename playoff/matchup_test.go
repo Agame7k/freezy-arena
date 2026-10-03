@@ -185,3 +185,43 @@ func TestMatchupOvertime(t *testing.T) {
 		assert.True(t, matchSpecs[i].isHidden)
 	}
 }
+
+func TestMatchupSeriesDescription(t *testing.T) {
+	upperBracket := &Matchup{}
+	for _, test := range []struct {
+		name       string
+		matchup    Matchup
+		wantStatus string
+		wantStakes string
+	}{
+		{"upper bracket single match", Matchup{id: "M1", NumWinsToAdvance: 1, losingAllianceDestination: upperBracket}, "", ""},
+		{"elimination single match", Matchup{id: "M5", NumWinsToAdvance: 1}, "", "Loser is eliminated"},
+		{"final not started", Matchup{id: "F", NumWinsToAdvance: 2, RedAllianceId: 4, BlueAllianceId: 5}, "Best of 3", ""},
+		{
+			"final red leads",
+			Matchup{id: "F", NumWinsToAdvance: 2, RedAllianceId: 4, BlueAllianceId: 5, RedAllianceWins: 1},
+			"Alliance 4 leads 1-0",
+			"Alliance 4 can win the event",
+		},
+		{
+			"final blue leads",
+			Matchup{id: "F", NumWinsToAdvance: 2, RedAllianceId: 4, BlueAllianceId: 5, BlueAllianceWins: 1},
+			"Alliance 5 leads 1-0",
+			"Alliance 5 can win the event",
+		},
+		{
+			"final tied",
+			Matchup{
+				id: "F", NumWinsToAdvance: 2, RedAllianceId: 4, BlueAllianceId: 5, RedAllianceWins: 1, BlueAllianceWins: 1,
+			},
+			"Series tied 1-1",
+			"Winner takes the event",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			status, stakes := test.matchup.SeriesDescription()
+			assert.Equal(t, test.wantStatus, status)
+			assert.Equal(t, test.wantStakes, stakes)
+		})
+	}
+}

@@ -91,6 +91,33 @@ html {
   background-color: #fc0;
 }
 
+/* In playoffs a yellow card belongs to the whole alliance: a single card glyph in the inner top corner of its team
+   column. */
+.teams {
+  position: relative;
+}
+
+.teams[data-alliance-card=yellow]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  width: 9px;
+  height: 13px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #ffe066, #fcc419);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 6px rgba(255, 212, 59, 0.8);
+}
+
+#leftTeams[data-alliance-card=yellow]::after {
+  right: 4px;
+  transform: rotate(10deg);
+}
+
+#rightTeams[data-alliance-card=yellow]::after {
+  left: 4px;
+  transform: rotate(-10deg);
+}
+
 #leftTeams {
   border-right: 1px solid #222;
 }
@@ -129,6 +156,8 @@ html {
 
 .avatar {
   height: 25px;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
 }
 
 .score-number {
@@ -199,6 +228,36 @@ html {
   opacity: 0.35;
 }
 
+/* "+15 TOWER" floating off a score when a climb or foul points land; see DisplayShared.createScorePopper. */
+.score-chip {
+  position: fixed;
+  z-index: 5;
+  padding: 2px 16px 0;
+  background: #ffd166;
+  color: #0b1728;
+  font-family: "FuturaLTBold";
+  font-size: 30px;
+  line-height: 40px;
+  white-space: nowrap;
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  pointer-events: none;
+}
+
+.score-chip-label {
+  margin-left: 8px;
+  font-size: 17px;
+  letter-spacing: 0.12em;
+  vertical-align: 3px;
+}
+
+/* The ring pops in when an alliance's hub becomes active, so the shift change catches the eye. */
+.score-hub-active[data-active=true] svg {
+  animation: hub-activate 550ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes hub-activate {
+  from { transform: scale(0.3); }
+}
+
 .progress-time {
   font-family: "FuturaLTBold";
   font-size: 23px;
@@ -213,6 +272,28 @@ html {
   height: 150px;
   background-color: #fff;
   border: 1px solid #222;
+  --lean: 0;
+  --intensity: 0;
+}
+
+/* A mini momentum glow, so the compact broadcast bug shows which alliance is ahead. Two separately-faded glow layers
+   (red, blue) let a single --lean value (-1 blue .. 1 red) drive both without needing conditional color math in CSS. */
+#matchCircle::before, #matchCircle::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  transition: opacity 400ms ease;
+}
+#matchCircle::before {
+  box-shadow: 0 0 22px 5px rgba(255, 68, 68, 0.75);
+  opacity: calc(var(--intensity) * max(var(--lean), 0));
+}
+#matchCircle::after {
+  box-shadow: 0 0 22px 5px rgba(32, 128, 255, 0.75);
+  opacity: calc(var(--intensity) * max(var(--lean) * -1, 0));
 }
 
 #logo {
