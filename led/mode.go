@@ -64,3 +64,34 @@ func colorForMode(mode Mode) Color {
 		return Black
 	}
 }
+
+// modeSwatchCycles covers a full pulse and the startup fill, the longest of the mode sequences.
+const modeSwatchCycles = 2*pulseHalfPeriod + startupCycles
+
+// ModeSwatch renders the mode on a scratch zone for a few seconds of update cycles and returns its brightest average
+// color and whether it animates, for drawing previews of the mode such as the simulator timeline.
+func ModeSwatch(mode Mode, baseColor Color) (Color, bool) {
+	scratch := zone{currentMode: mode}
+	var swatch Color
+	var previousPixels [numPixels]Color
+	animated := false
+	for cycle := 0; cycle < modeSwatchCycles; cycle++ {
+		scratch.updatePixels(baseColor)
+		if cycle > 0 && scratch.pixels != previousPixels {
+			animated = true
+		}
+		previousPixels = scratch.pixels
+
+		var sum [3]int
+		for _, pixel := range scratch.pixels {
+			sum[0] += int(pixel.R)
+			sum[1] += int(pixel.G)
+			sum[2] += int(pixel.B)
+		}
+		average := Color{byte(sum[0] / numPixels), byte(sum[1] / numPixels), byte(sum[2] / numPixels)}
+		if max(average.R, average.G, average.B) > max(swatch.R, swatch.G, swatch.B) {
+			swatch = average
+		}
+	}
+	return swatch, animated
+}

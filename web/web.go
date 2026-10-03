@@ -7,17 +7,15 @@ package web
 
 import (
 	"fmt"
+	"github.com/Team254/cheesy-arena/field"
+	"github.com/Team254/cheesy-arena/game"
+	"github.com/Team254/cheesy-arena/model"
 	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
-
-	"github.com/Team254/cheesy-arena/game"
-
-	"github.com/Team254/cheesy-arena/field"
-	"github.com/Team254/cheesy-arena/model"
 )
 
 const (
@@ -170,6 +168,10 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /displays/wall/websocket", web.wallDisplayWebsocketHandler)
 	mux.HandleFunc("GET /displays/webpage", web.webpageDisplayHandler)
 	mux.HandleFunc("GET /displays/webpage/websocket", web.webpageDisplayWebsocketHandler)
+	mux.HandleFunc("GET /field_sim", web.fieldSimHandler)
+	mux.HandleFunc("GET /field_sim/websocket", web.fieldSimWebsocketHandler)
+	mux.HandleFunc("GET /hub_sim", web.hubSimHandler)
+	mux.HandleFunc("GET /hub_sim/websocket", web.hubSimWebsocketHandler)
 	mux.HandleFunc("GET /login", web.loginHandler)
 	mux.HandleFunc("POST /login", web.loginPostHandler)
 	mux.HandleFunc("GET /match_play", web.matchPlayHandler)
@@ -260,7 +262,7 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /freezy/upload", web.uploadImagePageHandler)
 	mux.HandleFunc("POST /api/freezy/register_values", web.setPLCRegister)
 	mux.HandleFunc("GET /api/plc/websocket", web.plcWebsocketHandler)
-    
+
 	return mux
 }
 
@@ -280,4 +282,3 @@ func (web *Web) parseFiles(filenames ...string) (*template.Template, error) {
 	template := template.New("").Funcs(web.templateHelpers)
 	return template.ParseFiles(paths...)
 }
-

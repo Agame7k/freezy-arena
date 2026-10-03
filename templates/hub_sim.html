@@ -1,0 +1,68 @@
+{{/*
+Copyright 2026 Team 254. All Rights Reserved.
+
+Hub lighting simulator: shows what the Hub LEDs are doing (or would be doing) without the physical lights.
+*/}}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{{if eq .Alliance "red"}}Red Hub{{else if eq .Alliance "blue"}}Blue Hub{{else}}Hubs{{end}} - Hub Lighting Sim - {{.EventSettings.Name}}</title>
+    <link rel="shortcut icon" href="/static/img/favicon.ico">
+    <link rel="stylesheet" href="/static/css/hub_sim.css"/>
+  </head>
+  <body data-alliance="{{.Alliance}}">
+    <header class="sim-header">
+      <div class="sim-title">
+        <span class="sim-title-chip"></span>
+        <span id="simTitle">{{if eq .Alliance "red"}}Red Hub{{else if eq .Alliance "blue"}}Blue Hub{{else}}Red &amp; Blue Hubs{{end}}</span>
+        <span class="sim-subtitle">Hub lighting simulator</span>
+      </div>
+      <nav class="sim-links">
+        <a href="/field_sim" target="_blank" title="Open the whole field">Field view</a>
+        {{if ne .Alliance "red"}}<a href="/hub_sim?alliance=red" target="_blank">Red hub</a>{{end}}
+        {{if ne .Alliance "blue"}}<a href="/hub_sim?alliance=blue" target="_blank">Blue hub</a>{{end}}
+      </nav>
+      <div class="sim-match">
+        <span id="matchStateText" class="sim-match-state">-</span>
+        <span id="matchClock" class="sim-match-clock">-:--</span>
+      </div>
+      <div id="connStatus" class="sim-conn" data-state="waiting">Connecting</div>
+    </header>
+
+    <main id="hubPanels" class="hub-panels"></main>
+
+    <section class="sim-card timeline-card">
+      <div class="card-head">
+        <h2>Match timeline</h2>
+        <button type="button" id="timelineWinner" class="link-button" title="Before teleop, the shifts depend on who wins auto. Click to preview the other outcome."></button>
+      </div>
+      <div class="timeline">
+        <div id="timelineShifts" class="timeline-shifts"></div>
+        <div id="timelineRows" class="timeline-rows"></div>
+        <div id="timelinePlayhead" class="timeline-playhead" hidden></div>
+      </div>
+      <div id="timelineLegend" class="timeline-legend"></div>
+    </section>
+
+    <section id="controlsCard" class="sim-card controls-card">
+      <div class="card-head">
+        <h2>Simulator controls</h2>
+        <span class="muted small">Keys: 1&ndash;4 view a side, 0 reset view, S spin, &rarr; skip 5 s, N next change; click ahead on the timeline to jump</span>
+      </div>
+      <div id="controlsBody" class="controls"></div>
+    </section>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script>var hubSimConfig = {{.Config}};</script>
+    <script src="/static/js/lib/jquery.min.js"></script>
+    <script src="/static/js/lib/jquery.json-2.4.min.js"></script>
+    <script src="/static/js/lib/jquery.websocket-0.0.1.js"></script>
+    <script src="/static/js/cheesy-websocket.js"></script>
+    <script src="/static/js/match_timing.js"></script>
+    <script src="/static/js/hub_sim_shared.js"></script>
+    <script src="/static/js/hub_sim.js"></script>
+  </body>
+</html>
