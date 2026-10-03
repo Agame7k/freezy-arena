@@ -207,7 +207,9 @@
           for (let i = 0; i < perCannon; i++) {
             // Aim up and in towards the middle of the screen, with some fanning out.
             const angle = -Math.PI / 2 - side * (0.18 + Math.random() * 0.5);
-            const speed = (19 + Math.random() * 17) * scale;
+            // Tops out around 85% of the way up the screen; any faster and pieces sail far off the top and take the best
+            // part of half a minute to drift back down over whatever screen comes next.
+            const speed = (17 + Math.random() * 8) * scale;
             queued.push({at: start + Math.random() * 260, piece: makePiece(x, height + 10, angle, speed, colors, scale)});
           }
         });

@@ -53,7 +53,7 @@ const scoreMid = "185px";
 const scoreOut = "440px";
 const scoreFieldsOut = "180px";
 const timeoutDetailsIn = $("#timeoutDetails").css("width");
-const timeoutDetailsOut = "570px";
+const timeoutDetailsOut = "680px";
 
 // Resting places for the full-screen logo disc: centered on its own, perched on top of the final score card, or
 // shrunk above the bracket. Offsets are relative to the vertical center of the screen.
@@ -298,6 +298,12 @@ const executeTransitionQueue = async function () {
     if (targetScreen === "sponsor") {
       initializeSponsorDisplay();
     }
+    // Lets the stylesheet move things out of the way of the screen that's coming up, such as the lower third clearing
+    // the match bar.
+    $("body").attr("data-screen", targetScreen);
+    if (currentScreen === "intro") {
+      hideIntroExtras();
+    }
 
     try {
       const transition = transitionMap[currentScreen][targetScreen];
@@ -313,6 +319,9 @@ const executeTransitionQueue = async function () {
       console.error(`Transition from ${currentScreen} to ${targetScreen} failed:`, error);
     }
     currentScreen = targetScreen;
+    if (currentScreen === "intro") {
+      showIntroExtras();
+    }
     await wait(100);  // A small delay is needed to avoid visual glitches.
   }
 
@@ -322,18 +331,151 @@ const executeTransitionQueue = async function () {
 // Handles a websocket message to update the teams for the current match.
 const handleMatchLoad = function (data) {
   currentMatch = DisplayShared.handleMatchLoad(data, redSide, blueSide);
+  $("#matchCircle").removeAttr("data-aborted");
   updateMiniMomentum(0, 0);
   lastScores = null;
   leadingAlliance = "";
   MatchIntro.build(data, redSide, blueSide, getAvatarUrl);
+  buildIntroExtras(data);
+  if (currentScreen === "intro") {
+    hideIntroExtras().then(function () {
+      showIntroExtras();
+    });
+  }
+};
+
+// Fills in what goes above the intro bar for the loaded match: each team's rank and record before a qualification match,
+// or where the series stands before a playoff match. Nothing is shown when there's nothing to say.
+let introExtras = null;
+const buildIntroExtras = function (data) {
+  introExtras = null;
+  const match = data.Match;
+  if (match.Type === matchTypeQualification) {
+    const rankings = data.Rankings || {};
+    const records = data.Records || {};
+    const fill = function (element, teamIds) {
+      element.empty();
+      teamIds.forEach(function (teamId) {
+        if (!teamId) {
+          return;
+        }
+        const rank = rankings[teamId];
+        $("<div class='intro-standings-row'>").append(
+          $("<span>").text(teamId),
+          $("<span class='intro-standings-rank'>").text(rank ? `#${rank}` : ""),
+          $("<span class='intro-standings-record'>").text(records[teamId] || ""),
+        ).appendTo(element);
+      });
+    };
+    const redTeams = [match.Red1, match.Red2, match.Red3];
+    const blueTeams = [match.Blue1, match.Blue2, match.Blue3];
+    fill($("#leftIntroStandings"), redSide === "left" ? redTeams : blueTeams);
+    fill($("#rightIntroStandings"), redSide === "left" ? blueTeams : redTeams);
+    const anyRanked = redTeams.concat(blueTeams).some(function (teamId) {
+      return rankings[teamId];
+    });
+    if (anyRanked) {
+      introExtras = "#leftIntroStandings, #rightIntroStandings";
+    }
+  } else if (match.Type === matchTypePlayoff && (data.SeriesStatus || data.SeriesStakes)) {
+    $("#introSeriesStatus").text(data.SeriesStatus || "");
+    $("#introSeriesStakes").text(data.SeriesStakes || "");
+    introExtras = "#introSeries";
+  }
+};
+
+const showIntroExtras = function (delay = 0) {
+  if (introExtras === null) {
+    return;
+  }
+  const fromY = overlayCenteringShowParams === overlayCenteringTopShowParams ? "-16px" : "16px";
+  $(introExtras).show().each(function (i) {
+    this.animate([
+      {opacity: 0, translate: `0 ${fromY}`},
+      {opacity: 1, translate: "0 0"},
+    ], {duration: 600, delay: delay + i * 120, easing: ease.in, fill: "forwards"});
+  });
+};
+
+const hideIntroExtras = function () {
+  const shown = $(".intro-standings, #introSeries").filter(":visible");
+  return Promise.all(shown.toArray().map(function (element) {
+    return element.animate([{opacity: 0}], {duration: 250, easing: ease.out, fill: "forwards"}).finished
+      .catch(function () {});
+  })).then(function () {
+    shown.hide();
+  });
 };
 
 // Handles a websocket message to update the match time countdown.
 const handleMatchTime = function (data) {
+  const aborted = data.MatchAborted === true;
   DisplayShared.handleMatchTime(data);
   translateMatchTime(data, function (matchState, matchStateText, countdownSec) {
-    updatePhase(getPhaseLabel(matchState, countdownSec));
+    updatePhase(aborted ? "Aborted" : getPhaseLabel(matchState, countdownSec));
     updateTimerUrgency(matchState, countdownSec);
+  });
+  if (aborted) {
+    $("#matchTime").text("ABORT");
+  }
+  updateAbort(aborted);
+};
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Match abort.
+// ---------------------------------------------------------------------------------------------------------------------
+
+// Whether the current match has been aborted, as of the last match time message; null until the first one arrives.
+let matchAborted = null;
+// Resolves once the match bar may be taken down after an abort; null when no abort is playing out.
+let abortBarHold = null;
+// How long the match bar waits before going down, in case an abort notice is racing the screen change.
+const abortGraceMs = 150;
+
+// Throws up the abort takeover when the match is aborted, which holds until the match is reset, and slams the match bar
+// to a stop underneath it.
+const updateAbort = function (aborted) {
+  const matchName = currentMatch ? currentMatch.LongName : "";
+  if (AbortTakeover.update(aborted, "audience", matchName)) {
+    abortBarHold = wait(AbortTakeover.introDurationMs - 300);
+    if (currentScreen === "match") {
+      slamMatchBar();
+    }
+  }
+  if (!aborted) {
+    abortBarHold = null;
+    $("#matchCircle").removeAttr("data-aborted");
+  }
+  if (matchAborted !== null && aborted !== matchAborted) {
+    // Flag or unflag the aborted match on the bracket.
+    $("#bracketSvg").attr("src", "/api/bracket/svg?activeMatch=saved&v=" + new Date().getTime());
+  }
+  matchAborted = aborted;
+};
+
+// Turns the match circle red, punches it and rattles the whole bar, rolling red rings off the circle.
+const slamMatchBar = function () {
+  $("#matchCircle").attr("data-aborted", true);
+  document.getElementById("matchCircle").animate([
+    {transform: "scale(1.5) rotate(-12deg)"},
+    {transform: "scale(0.9) rotate(4deg)", offset: 0.45},
+    {transform: "scale(1.06) rotate(-2deg)", offset: 0.7},
+    {transform: "none"},
+  ], {duration: 700, easing: ease.in});
+  document.getElementById("matchOverlay").animate([
+    {transform: "none"},
+    {transform: "translate(-24px, 6px) rotate(-0.8deg)"},
+    {transform: "translate(20px, -5px) rotate(0.7deg)"},
+    {transform: "translate(-15px, 4px) rotate(-0.5deg)"},
+    {transform: "translate(11px, -3px) rotate(0.3deg)"},
+    {transform: "translate(-6px, 2px)"},
+    {transform: "translate(3px, 0px)"},
+    {transform: "none"},
+  ], {duration: 800, easing: "ease-out"});
+  [0, 300, 600].forEach(function (delay) {
+    setTimeout(function () {
+      pulseRing("#ff5571");
+    }, delay);
   });
 };
 
@@ -502,6 +644,11 @@ const handleScorePosted = function (data) {
   // Reload the bracket to reflect any changes.
   $("#bracketSvg").attr("src", "/api/bracket/svg?activeMatch=saved&v=" + new Date().getTime());
 
+  // Bring the standings up to date if they're on screen.
+  if (currentScreen === "standings") {
+    standingsTable.refresh();
+  }
+
   if (data.Match.Type === matchTypePlayoff) {
     // Hide bonus ranking points and show playoff-only fields.
     $(".playoff-hidden-field").hide();
@@ -511,6 +658,8 @@ const handleScorePosted = function (data) {
     $(".playoff-only-field").hide();
   }
   $(".coopertition-hidden-field").toggle(data.CoopertitionEnabled);
+  // Only qualification results count towards the rankings; practice matches don't earn ranking points that matter.
+  $(".qualification-only-field").toggle(data.Match.Type === matchTypeQualification);
 
   // Wake the audio engine now, well ahead of the reveal, so its first cue isn't lost while it spins up.
   revealSound.start();
@@ -836,6 +985,12 @@ const transitionBlankToMatch = function () {
 };
 
 const transitionMatchToBlank = async function () {
+  // An abort blanks the display at the same moment it's announced; give the notice a beat to land, then keep the bar up
+  // while the abort plays out over it.
+  await wait(abortGraceMs);
+  if (abortBarHold !== null) {
+    await abortBarHold;
+  }
   await Promise.all([collapseMatch(scoreIn), fadeTeams()]);
   $(".teams").hide();
   await sinkOverlay();
@@ -954,7 +1109,8 @@ const openIris = function (delay, fromRadius) {
   return Promise.all([
     animate("#blindsBackdrop", [
       {clipPath: `circle(${fromRadius} at 50% 50%)`},
-      {clipPath: "circle(80vmax at 50% 50%)"},
+      // A percentage rather than viewport units, which the stage zoom would shrink; 75% reaches past the corners.
+      {clipPath: "circle(75% at 50% 50%)"},
     ], 1200, ease.in, delay),
     animate("#blindsRing", [
       {opacity: 1, transform: "scale(1)"},
@@ -1068,6 +1224,28 @@ const hideBracket = function () {
     });
 };
 
+// The qualification standings, built once the page has loaded.
+let standingsTable = null;
+
+const revealStandings = async function (delay) {
+  await standingsTable.load();
+  standingsTable.render(0, delay + 350);
+  $("#standings").show();
+  standingsTable.startCycle();
+  return animate("#standings", [
+    {opacity: 0, transform: "scale(1.04)"},
+    {opacity: 1, transform: "scale(1)"},
+  ], 800, ease.in, delay);
+};
+
+const hideStandings = function () {
+  standingsTable.stopCycle();
+  return animate("#standings", [{opacity: 0, transform: "scale(0.97)"}], 450, ease.out)
+    .then(function () {
+      $("#standings").hide();
+    });
+};
+
 // Standalone sponsor entrance: the card lifts up into place.
 const revealSponsor = function (delay) {
   $("#sponsor").show();
@@ -1136,6 +1314,42 @@ const transitionLogoToBracket = function () {
 
 const transitionBracketToLogo = function () {
   return Promise.all([hideBracket(), moveDisc(discCenterY, 1, 150)]);
+};
+
+const transitionLogoToStandings = function () {
+  return Promise.all([moveDisc(discBracketY, discBracketScale), revealStandings(250)]);
+};
+
+const transitionStandingsToLogo = function () {
+  return Promise.all([hideStandings(), moveDisc(discCenterY, 1, 150)]);
+};
+
+// The disc is already up top for both, so the one panel just swaps for the other underneath it.
+const transitionBracketToStandings = function () {
+  return Promise.all([hideBracket(), revealStandings(300)]);
+};
+
+const transitionStandingsToBracket = function () {
+  return Promise.all([hideStandings(), revealBracket(300)]);
+};
+
+const transitionScoreToStandings = async function () {
+  await Promise.all([hideFinalScore(), moveDisc(discBracketY, discBracketScale, 100), revealStandings(500)]);
+};
+
+const transitionStandingsToScore = async function () {
+  await Promise.all([hideStandings(), moveDisc(discScoreY, 1, 100), wait(1000)]);
+  await presentFinalScore();
+};
+
+const transitionBlankToStandings = async function () {
+  await transitionBlankToLogo();
+  await transitionLogoToStandings();
+};
+
+const transitionStandingsToBlank = async function () {
+  await transitionStandingsToLogo();
+  await transitionLogoToBlank();
 };
 
 const transitionBracketToScore = async function () {
@@ -1319,6 +1533,8 @@ const setTeamInfo = function (side, position, teamId, cards, rankings) {
 $(function () {
   // Read the configuration for this display from the URL query string.
   const urlParams = new URLSearchParams(window.location.search);
+  DisplayShared.fitStage();
+  standingsTable = StandingsTable.create(document.getElementById("standingsPanel"));
   document.body.style.backgroundColor = urlParams.get("background");
   // The stylesheet gives <html> a background too, which stops the body color from filling the screen; override it so
   // chroma-key backgrounds (e.g. #0f0) cover the whole display.
@@ -1387,6 +1603,7 @@ $(function () {
       match: transitionBlankToMatch,
       score: transitionBlankToScore,
       sponsor: transitionBlankToSponsor,
+      standings: transitionBlankToStandings,
       teamIntro: transitionBlankToTeamIntro,
       timeout: transitionBlankToTimeout,
     },
@@ -1396,6 +1613,7 @@ $(function () {
       logoLuma: transitionBracketToLogoLuma,
       score: transitionBracketToScore,
       sponsor: transitionBracketToSponsor,
+      standings: transitionBracketToStandings,
     },
     intro: {
       blank: transitionIntroToBlank,
@@ -1408,6 +1626,7 @@ $(function () {
       logoLuma: transitionLogoToLogoLuma,
       score: transitionLogoToScore,
       sponsor: transitionLogoToSponsor,
+      standings: transitionLogoToStandings,
     },
     logoLuma: {
       blank: transitionLogoLumaToBlank,
@@ -1425,6 +1644,13 @@ $(function () {
       logo: transitionScoreToLogo,
       logoLuma: transitionScoreToLogoLuma,
       sponsor: transitionScoreToSponsor,
+      standings: transitionScoreToStandings,
+    },
+    standings: {
+      blank: transitionStandingsToBlank,
+      bracket: transitionStandingsToBracket,
+      logo: transitionStandingsToLogo,
+      score: transitionStandingsToScore,
     },
     sponsor: {
       blank: transitionSponsorToBlank,

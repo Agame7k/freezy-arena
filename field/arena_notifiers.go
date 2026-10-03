@@ -6,6 +6,7 @@
 package field
 
 import (
+	"fmt"
 	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/model"
 	"github.com/Team254/cheesy-arena/playoff"
@@ -31,13 +32,15 @@ type ArenaNotifiers struct {
 	ScorePostedNotifier                *websocket.Notifier
 	ScoringStatusNotifier              *websocket.Notifier
 	PlcCoilsNotifier                   *websocket.Notifier
-	MatchListNotifier 				   *websocket.Notifier
-	LedChangeNotifier 				   *websocket.Notifier
+	MatchListNotifier                  *websocket.Notifier
+	LedChangeNotifier                  *websocket.Notifier
 }
 
 type MatchTimeMessage struct {
 	MatchState
 	MatchTimeSec int
+	// Whether the match was ended early by an abort rather than running to time; stays set until the match is reset.
+	MatchAborted bool
 }
 
 type audienceAllianceScoreFields struct {
@@ -212,6 +215,8 @@ func (arena *Arena) GenerateMatchLoadMessage() any {
 	}
 
 	rankings := make(map[string]int)
+	// Each team's qualification win-loss-tie record, e.g. "4-1-0", for announcers and audience graphics.
+	records := make(map[string]string)
 	for _, teamId := range allTeamIds {
 		ranking, err := arena.Database.GetRankingForTeam(teamId)
 		if err != nil {
@@ -219,7 +224,13 @@ func (arena *Arena) GenerateMatchLoadMessage() any {
 		}
 		if ranking != nil {
 			rankings[strconv.Itoa(teamId)] = ranking.Rank
+			records[strconv.Itoa(teamId)] = fmt.Sprintf("%d-%d-%d", ranking.Wins, ranking.Losses, ranking.Ties)
 		}
+	}
+
+	var seriesStatus, seriesStakes string
+	if matchup != nil {
+		seriesStatus, seriesStakes = matchup.SeriesDescription()
 	}
 
 	// Don't allow manual substitution of practice/playoff teams when they would be automatically overwritten by Nexus.
@@ -232,7 +243,10 @@ func (arena *Arena) GenerateMatchLoadMessage() any {
 		IsReplay           bool
 		Teams              map[string]*model.Team
 		Rankings           map[string]int
+		Records            map[string]string
 		Matchup            *playoff.Matchup
+		SeriesStatus       string
+		SeriesStakes       string
 		RedOffFieldTeams   []*model.Team
 		BlueOffFieldTeams  []*model.Team
 		BreakDescription   string
@@ -243,7 +257,10 @@ func (arena *Arena) GenerateMatchLoadMessage() any {
 		isReplay,
 		teams,
 		rankings,
+		records,
 		matchup,
+		seriesStatus,
+		seriesStakes,
 		redOffFieldTeams,
 		blueOffFieldTeams,
 		arena.breakDescription,
@@ -252,7 +269,7 @@ func (arena *Arena) GenerateMatchLoadMessage() any {
 }
 
 func (arena *Arena) generateMatchTimeMessage() any {
-	return MatchTimeMessage{arena.MatchState, int(arena.MatchTimeSec())}
+	return MatchTimeMessage{arena.MatchState, int(arena.MatchTimeSec()), arena.matchAborted}
 }
 
 func (arena *Arena) generateMatchTimingMessage() any {
@@ -261,16 +278,16 @@ func (arena *Arena) generateMatchTimingMessage() any {
 
 func (arena *Arena) generatePlcCoilsMessage() any {
 	// Get the current state of all PLC coils.
-    coilsArray := arena.Plc.GetAllCoils()
-    coilsArrayNames := arena.Plc.GetCoilNames()
+	coilsArray := arena.Plc.GetAllCoils()
+	coilsArrayNames := arena.Plc.GetCoilNames()
 
 	// Build a map pairing coil names with their values.
-    coilsMap := make(map[string]bool)
-    for i, name := range coilsArrayNames {
-        if i < len(coilsArray) {
-            coilsMap[name] = coilsArray[i]
-        }
-    }
+	coilsMap := make(map[string]bool)
+	for i, name := range coilsArrayNames {
+		if i < len(coilsArray) {
+			coilsMap[name] = coilsArray[i]
+		}
+	}
 	return coilsMap
 }
 
@@ -419,22 +436,22 @@ func (arena *Arena) generateScoringStatusMessage() any {
 }
 
 func (arena *Arena) generateLedModeMessage() interface{} {
-    redMode, blueMode := arena.Leds.GetModes()
+	redMode, blueMode := arena.Leds.GetModes()
 
 	log.Printf("Generating LED mode message with RedMode=%d and BlueMode=%d", redMode, blueMode)
 
-    // Only notify if mode has actually changed
-    if redMode == arena.lastRedLedMode && blueMode == arena.lastBlueLedMode {
-       // return nil      // Return nil to suppress the notification
-    }
+	// Only notify if mode has actually changed
+	if redMode == arena.lastRedLedMode && blueMode == arena.lastBlueLedMode {
+		// return nil      // Return nil to suppress the notification
+	}
 
-    arena.lastRedLedMode  = redMode
-    arena.lastBlueLedMode = blueMode
+	arena.lastRedLedMode = redMode
+	arena.lastBlueLedMode = blueMode
 
-    return map[string]interface{}{
-        "RedMode":  redMode,
-        "BlueMode": blueMode,
-    }
+	return map[string]interface{}{
+		"RedMode":  redMode,
+		"BlueMode": blueMode,
+	}
 }
 
 // Constructs the data object for one alliance sent to the audience display for the realtime scoring overlay.

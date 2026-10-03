@@ -343,3 +343,16 @@
   z-index: 101;
   pointer-events: none;
 }
+
+/* The match that decides the event: the rays burn gold and the champions are named on a gold plate. */
+#winnerReveal[data-champion] #winnerRevealRays {
+  background: repeating-conic-gradient(rgba(255, 209, 102, 0.24) 0deg 5deg, transparent 5deg 15deg);
+}
+#winnerReveal[data-champion] .reveal-destination {
+  padding: 1.1vh 4.6vh;
+  background: #ffd166;
+  color: #0b1728;
+  font-size: min(3.6vh, 2.4vw);
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}

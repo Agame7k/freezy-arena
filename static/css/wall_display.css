@@ -3,6 +3,8 @@
   Author: pat@patfairbank.com (Patrick Fairbank)
 */
 
+@import url("/static/css/display_theme.css");
+@import url("/static/css/standings_table.css");
 @import url("/static/css/display_overlay_shared.css");
 @import url("/static/css/match_intro.css");
 @import url("/static/css/winner_reveal.css");
@@ -54,4 +56,96 @@
   font-size: 1.4vw;
   font-family: "FuturaLTBold";
   color: #fff;
+}
+
+/* The bar wears the same colors and type as the audience display's, at the wall's own size. */
+#matchOverlay {
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+}
+.teams {
+  background: rgba(5, 10, 20, 0.55);
+  color: #f8fafc;
+  font-family: "FuturaLTBold";
+}
+.reversible-left:not([data-reversed=true]) {
+  background: linear-gradient(90deg, var(--red-outer), var(--red-inner));
+}
+.reversible-left[data-reversed=true] {
+  background: linear-gradient(90deg, var(--blue-outer), var(--blue-inner));
+}
+.reversible-right:not([data-reversed=true]) {
+  background: linear-gradient(90deg, var(--blue-inner), var(--blue-outer));
+}
+.reversible-right[data-reversed=true] {
+  background: linear-gradient(90deg, var(--red-inner), var(--red-outer));
+}
+.score-number {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+#eventMatchInfo {
+  z-index: 0;
+  background: rgba(4, 10, 20, 0.86);
+  color: var(--muted-text);
+  font-family: "FuturaLTBold";
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#eventMatchInfo #matchName {
+  color: var(--gold);
+}
+#matchCircle {
+  background: #f8fafc;
+  border: 5px solid #172b46;
+  box-shadow: 0 0 0 2px rgba(255, 209, 102, 0.7), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+#matchTime {
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+}
+#timeoutDetails {
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+  color: #f8fafc;
+  font-family: "FuturaLTBold";
+  text-transform: uppercase;
+}
+#timeoutBreakDescription {
+  color: var(--gold);
+  font-weight: normal;
+}
+#timeoutNextMatch {
+  color: var(--muted-text);
+  font-weight: normal;
+}
+#timeoutNextMatchName {
+  color: #fff;
+}
+/* The wall's bar is narrower than the audience display's, so each name gets the space either side of the match circle
+   and is cut short rather than running underneath it. */
+#eventMatchInfo {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+#eventMatchInfo > span {
+  max-width: calc(50% - 76px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The standings, hung from the same line as the bar and scaled with it; the script places and scales it. */
+#standings {
+  position: absolute;
+  left: 50%;
+  width: 1300px;
+  display: none;
+  opacity: 0;
+  transform-origin: top center;
 }

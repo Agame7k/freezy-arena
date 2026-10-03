@@ -1,0 +1,20 @@
+/*
+  Colors and panel styling shared by the venue displays (audience, rankings, queueing, wall, bracket), so they all read
+  as one set. The accents are for text, lines and glows on dark backgrounds; the outer/inner pairs are the alliance
+  panel gradients, lighter at the outside edge of the screen and darker towards the middle.
+*/
+
+:root {
+  --red-accent: #ff5571;
+  --blue-accent: #4da3ff;
+  --red-outer: #b0243f;
+  --red-inner: #6e1530;
+  --blue-outer: #1f63b8;
+  --blue-inner: #123a70;
+  --gold: #ffd166;
+  --navy: #0b1728;
+  --backdrop: #050a14;
+  --panel: linear-gradient(135deg, rgba(9, 20, 36, 0.98), rgba(18, 34, 57, 0.96));
+  --panel-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+  --muted-text: #b6c3d4;
+}

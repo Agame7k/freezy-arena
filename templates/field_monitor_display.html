@@ -17,6 +17,7 @@ Display showing robot connection status.
     <link rel="stylesheet" href="/static/css/lib/bootstrap-icons.min.css"/>
     <link rel="stylesheet" href="/static/css/cheesy-arena.css"/>
     <link rel="stylesheet" href="/static/css/field_monitor_display.css"/>
+    <link rel="stylesheet" href="/static/css/abort_takeover.css"/>
   </head>
 
   <body>
@@ -91,6 +92,7 @@ Display showing robot connection status.
 <script src="/static/js/lib/jquery.transit.min.js"></script>
 <script src="/static/js/lib/bootstrap.bundle.min.js"></script>
 <script src="/static/js/match_timing.js"></script>
+<script src="/static/js/abort_takeover.js"></script>
 <script src="/static/js/field_monitor_display.js"></script>
 {{range $sound := .MatchSounds}}
   <audio id="sound-{{$sound.Name}}" src="/static/audio/{{$sound.Name}}.{{$sound.FileExtension}}" preload="auto">

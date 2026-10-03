@@ -327,7 +327,8 @@ main {
 
 .tower-input:has(.tower-input-button:disabled) .team-num {
   background-color: var(--alliance-inactive);
-  color: var(--text-inactive);
+  /* Dark rather than faded, so scorers can still tell whose tower is whose before the match starts. */
+  color: var(--gray-700);
 }
 
 .tower-input-button[data-selected="true"] {
@@ -346,7 +347,7 @@ main {
 }
 
 #fouls-button:disabled {
-  color: var(--text-inactive-dark);
+  color: var(--gray-500);
   background-color: var(--auto-inactive);
 }
 

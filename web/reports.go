@@ -16,10 +16,10 @@ import (
 	"github.com/jung-kurt/gofpdf"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"time"
-	"os"
 )
 
 // Generates a CSV-formatted report of the qualification rankings.
@@ -366,7 +366,7 @@ func drawPdfLogo(pdf *reportPdf, x float64, y float64, width float64, logoSuffix
 		imagePath = "static/img/game-logo.png"
 	}
 	pdf.ImageOptions(
-		imagePath ,
+		imagePath,
 		x-(width/2),
 		y-25,
 		width,

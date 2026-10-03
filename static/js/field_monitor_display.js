@@ -176,6 +176,23 @@ const handleMatchTime = function (data) {
       $(".ds-dependent").attr("data-preMatch", "false");
     }
   });
+  updateAbort(data.MatchAborted === true);
+};
+
+// Whether the current match has been aborted, as of the last match time message; null until the first one arrives.
+let matchAborted = null;
+
+// Flags an aborted match on the status row and throws up the abort takeover, both of which hold until the match is
+// reset.
+const updateAbort = function (aborted) {
+  $("#matchStatusRow").attr("data-aborted", aborted);
+  $("#matchStateAllianceStation").attr("data-aborted", aborted);
+  if (aborted) {
+    $("#matchState").text("MATCH ABORTED");
+    $("#matchStateAllianceStation").text("Aborted");
+  }
+  AbortTakeover.update(aborted, "monitor", $("#matchName").text());
+  matchAborted = aborted;
 };
 
 const updateAllianceStationMatchState = function () {
@@ -203,6 +220,10 @@ const updateAllianceStationMatchState = function () {
       matchStateText = "Blue Active";
       activeAlliance = "blue";
     }
+  }
+  if (matchAborted) {
+    matchStateText = "Aborted";
+    activeAlliance = "";
   }
 
   $("#matchStateAllianceStation")

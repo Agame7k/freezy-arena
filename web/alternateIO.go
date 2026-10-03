@@ -9,12 +9,12 @@ import (
 	//"github.com/Team254/cheesy-arena/game"
 	//"github.com/Team254/cheesy-arena/model"
 	"encoding/json"
+	"github.com/Team254/cheesy-arena/field"
+	"github.com/Team254/cheesy-arena/websocket"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
-	"io"
-	"github.com/Team254/cheesy-arena/field"
-	"github.com/Team254/cheesy-arena/websocket"
 )
 
 // RequestPayload represents the structure of the incoming POST data.
@@ -23,8 +23,8 @@ type RequestPayload struct {
 	State   bool `json:"state"`
 }
 type RequestPayloadPLCRegister struct {
-	Register int  `json:"register"`
-	CValue   uint16  `json:"cvalue"`
+	Register int    `json:"register"`
+	CValue   uint16 `json:"cvalue"`
 }
 
 // Renders the field monitor display.
@@ -38,12 +38,12 @@ func (web *Web) eStopStatePostHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse the request body.
 	var payload []RequestPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-    	http.Error(w, "Invalid request payload", http.StatusBadRequest)
-    	return
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
 	}
 
 	for _, item := range payload {
-    	web.arena.Plc.SetAlternateIOStopState(item.Channel, item.State)
+		web.arena.Plc.SetAlternateIOStopState(item.Channel, item.State)
 	}
 
 	// Respond with success.
@@ -60,17 +60,17 @@ func (web *Web) getAllPlcCoilsGetHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Get the current state of all PLC coils.
-    coilsArray := web.arena.Plc.GetAllCoils()
-    coilsArrayNames := web.arena.Plc.GetCoilNames()
+	coilsArray := web.arena.Plc.GetAllCoils()
+	coilsArrayNames := web.arena.Plc.GetCoilNames()
 
 	// Build a map pairing coil names with their values.
-    coilsMap := make(map[string]bool)
-    for i, name := range coilsArrayNames {
-        if i < len(coilsArray) {
-            coilsMap[name] = coilsArray[i]
-        }
-    }
-	
+	coilsMap := make(map[string]bool)
+	for i, name := range coilsArrayNames {
+		if i < len(coilsArray) {
+			coilsMap[name] = coilsArray[i]
+		}
+	}
+
 	// Marshal the response payload.
 	response, err := json.Marshal(coilsMap)
 	if err != nil {
@@ -127,24 +127,26 @@ func (web *Web) fieldStackLightGetHandler(w http.ResponseWriter, r *http.Request
 	w.Write(response)
 }
 
-
 type lightState struct {
 	Color string `json:"color"`
-	Blink bool `json:"blink"`
+	Blink bool   `json:"blink"`
 }
+
 // Structure representing one light fixture
 // Each lightState represents one light in the stack.
 type teamStackLight struct {
 	LightStates [2]lightState `json:"lightStates"`
 }
+
 // Structure that represents all of the team stack lights
 type allStackLights struct {
-	Red [3]teamStackLight `json:"red"`
+	Red  [3]teamStackLight `json:"red"`
 	Blue [3]teamStackLight `json:"blue"`
 }
+
 func (web *Web) teamStackLightGetHandler(w http.ResponseWriter, r *http.Request) {
-		// Ensure the request is a GET request.
-		// See the team_sign.go method: generateTeamNumberTexts for the template
+	// Ensure the request is a GET request.
+	// See the team_sign.go method: generateTeamNumberTexts for the template
 	if r.Method != http.MethodGet {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
@@ -154,14 +156,14 @@ func (web *Web) teamStackLightGetHandler(w http.ResponseWriter, r *http.Request)
 	// stackLights.Red = [3]teamStackLight
 	// stackLights.Blue = [3]teamStackLight
 
-	for team, allianceStation := range web.arena.AllianceStations { 
+	for team, allianceStation := range web.arena.AllianceStations {
 		var teamStackLights = &stackLights.Blue
 		var allianceColor = "blue"
-		if team[0] == 'R'	{
+		if team[0] == 'R' {
 			teamStackLights = &stackLights.Red
 			allianceColor = "red"
 		}
-		dsN,_ := strconv.Atoi(string(team[1]))
+		dsN, _ := strconv.Atoi(string(team[1]))
 		teamStackLight := &teamStackLights[dsN-1]
 		//  The lights are as follows:
 		//  L2: Blue/Red
@@ -173,7 +175,6 @@ func (web *Web) teamStackLightGetHandler(w http.ResponseWriter, r *http.Request)
 		//     solid: Estop pressed/enabled
 		//     flash: Astop pressed/enabled during autonomous period
 
-
 		// Light/Layer 1 - Stop States
 		if allianceStation.EStop {
 			teamStackLight.LightStates[0] = lightState{Color: "orangered", Blink: false}
@@ -184,15 +185,15 @@ func (web *Web) teamStackLightGetHandler(w http.ResponseWriter, r *http.Request)
 		}
 
 		// Light/Layer 2 - Robot States
-		// Blink with any problem 
+		// Blink with any problem
 		// Solid during the match if all is good.
 		// Off off-match if all is good.
-		var ok = true;
+		var ok = true
 		if allianceStation.Bypass {
 			ok = false
 			// This is always false for some reason
-		// } else if !allianceStation.Ethernet {
-		// 	ok = false
+			// } else if !allianceStation.Ethernet {
+			// 	ok = false
 		} else if allianceStation.DsConn == nil {
 			ok = false
 		} else if allianceStation.DsConn.WrongStation != "" {
@@ -205,7 +206,7 @@ func (web *Web) teamStackLightGetHandler(w http.ResponseWriter, r *http.Request)
 			ok = false
 		}
 
-		if ok { 
+		if ok {
 			if web.arena.MatchState == field.AutoPeriod || web.arena.MatchState == field.PausePeriod || web.arena.MatchState == field.TeleopPeriod {
 				// Robot enabled during match
 				teamStackLight.LightStates[1] = lightState{Color: allianceColor, Blink: false}
@@ -214,7 +215,7 @@ func (web *Web) teamStackLightGetHandler(w http.ResponseWriter, r *http.Request)
 				teamStackLight.LightStates[1] = lightState{Color: "black", Blink: false}
 			}
 		} else {
-			teamStackLight.LightStates[1] = lightState{Color: allianceColor, Blink: true}		
+			teamStackLight.LightStates[1] = lightState{Color: allianceColor, Blink: true}
 		}
 	}
 
@@ -238,12 +239,12 @@ func (web *Web) setPLCRegister(w http.ResponseWriter, r *http.Request) {
 	// Parse the request body.
 	var payload []RequestPayloadPLCRegister
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-    	http.Error(w, "Invalid request payload", http.StatusBadRequest)
-    	return
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
 	}
 
 	for _, item := range payload {
-    	web.arena.Plc.SetRegisterValue(item.Register, item.CValue)
+		web.arena.Plc.SetRegisterValue(item.Register, item.CValue)
 	}
 
 	// Respond with success.
@@ -253,24 +254,24 @@ func (web *Web) setPLCRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (web *Web) xplcWebsocketHandler(w http.ResponseWriter, r *http.Request) {
-    ws, err := websocket.NewWebsocket(w, r)
-    if err != nil {
-        log.Printf("Websocket upgrade error: %v", err)
-        return
-    }
-    defer ws.Close()
+	ws, err := websocket.NewWebsocket(w, r)
+	if err != nil {
+		log.Printf("Websocket upgrade error: %v", err)
+		return
+	}
+	defer ws.Close()
 
-    // Subscribe to the PLC I/O + registers notifier
-    arena := web.arena // assuming you have access to the arena/field
-    plc := arena.Plc   // adjust based on actual field/arena struct
+	// Subscribe to the PLC I/O + registers notifier
+	arena := web.arena // assuming you have access to the arena/field
+	plc := arena.Plc   // adjust based on actual field/arena struct
 
-    if plc == nil || web.arena.Plc.IoChangeNotifier() == nil {
-        ws.WriteError("PLC not configured")
-        return
-    }
+	if plc == nil || web.arena.Plc.IoChangeNotifier() == nil {
+		ws.WriteError("PLC not configured")
+		return
+	}
 
-    // Handle the notifier (sends initial state + live updates)
-    ws.HandleNotifiers(web.arena.Plc.IoChangeNotifier())
+	// Handle the notifier (sends initial state + live updates)
+	ws.HandleNotifiers(web.arena.Plc.IoChangeNotifier())
 }
 
 // Main WebSocket handler
@@ -304,11 +305,11 @@ func (web *Web) plcWebsocketHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (web *Web) handlePLCWebSocketMessage(ws *websocket.Websocket, messageType string, data any) {
-    switch messageType {
+	switch messageType {
 
-    case "setPLCRegister", "setRegisters":
-        if messageType != "setPLCRegister" && messageType != "setRegisters" {
-		return
+	case "setPLCRegister", "setRegisters":
+		if messageType != "setPLCRegister" && messageType != "setRegisters" {
+			return
 		}
 
 		var payloads []RequestPayloadPLCRegister
@@ -333,7 +334,7 @@ func (web *Web) handlePLCWebSocketMessage(ws *websocket.Websocket, messageType s
 
 		// Apply changes exactly like your HTTP handler
 		for _, item := range payloads {
-			web.arena.Plc.SetRegisterValue(item.Register, uint16(item.CValue))  // Convert int16 → uint16
+			web.arena.Plc.SetRegisterValue(item.Register, uint16(item.CValue)) // Convert int16 → uint16
 			//log.Printf("WebSocket: Set PLC register %d to %d", item.Register, item.CValue)
 		}
 
@@ -343,42 +344,41 @@ func (web *Web) handlePLCWebSocketMessage(ws *websocket.Websocket, messageType s
 			"success": true,
 		})
 
-    case "setInput":
-        var payloads []RequestPayload
+	case "setInput":
+		var payloads []RequestPayload
 
-        switch v := data.(type) {
-        case []any:
-            for _, item := range v {
-                if m, ok := item.(map[string]any); ok {
-                    ch, _ := m["channel"].(float64)
-                    st, _ := m["state"].(bool)
-                    payloads = append(payloads, RequestPayload{Channel: int(ch), State: st})
-                }
-            }
-        default:
-            if m, ok := data.(map[string]any); ok {
-                ch, _ := m["channel"].(float64)
-                st, _ := m["state"].(bool)
-                payloads = append(payloads, RequestPayload{Channel: int(ch), State: st})
-            }
-        }
+		switch v := data.(type) {
+		case []any:
+			for _, item := range v {
+				if m, ok := item.(map[string]any); ok {
+					ch, _ := m["channel"].(float64)
+					st, _ := m["state"].(bool)
+					payloads = append(payloads, RequestPayload{Channel: int(ch), State: st})
+				}
+			}
+		default:
+			if m, ok := data.(map[string]any); ok {
+				ch, _ := m["channel"].(float64)
+				st, _ := m["state"].(bool)
+				payloads = append(payloads, RequestPayload{Channel: int(ch), State: st})
+			}
+		}
 
-        if len(payloads) == 0 {
-            ws.WriteError("Invalid or empty input payload")
-            return
-        }
+		if len(payloads) == 0 {
+			ws.WriteError("Invalid or empty input payload")
+			return
+		}
 
-        for _, item := range payloads {
-            web.arena.Plc.SetAlternateIOStopState(item.Channel, item.State)
-        }
+		for _, item := range payloads {
+			web.arena.Plc.SetAlternateIOStopState(item.Channel, item.State)
+		}
 
-        ws.Write("plcInputSetSuccess", map[string]any{
-            "count":   len(payloads),
-            "success": true,
-        })
-    }
+		ws.Write("plcInputSetSuccess", map[string]any{
+			"count":   len(payloads),
+			"success": true,
+		})
+	}
 }
-	
 
 // Safe parser
 func (web *Web) parsePLCRegisterPayload(data any) (RequestPayloadPLCRegister, bool) {
@@ -388,7 +388,7 @@ func (web *Web) parsePLCRegisterPayload(data any) (RequestPayloadPLCRegister, bo
 	}
 
 	regFloat, _ := m["register"].(float64)
-	valFloat, _ := m["cValue"].(float64)   // JSON numbers come as float64
+	valFloat, _ := m["cValue"].(float64) // JSON numbers come as float64
 
 	return RequestPayloadPLCRegister{
 		Register: int(regFloat),

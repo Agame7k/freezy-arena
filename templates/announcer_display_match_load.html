@@ -1,24 +1,35 @@
 {{define "announcer_display_match_load"}}
+{{if or .IsReplay .SeriesStatus .SeriesStakes}}
+<!-- Talking points for the match as a whole. -->
+<div class="row mb-2">
+  <div class="col-sm-12 d-flex flex-wrap gap-2 align-items-center">
+    {{if .IsReplay}}<span class="badge fs-5 text-bg-warning">Replay</span>{{end}}
+    {{if .SeriesStatus}}<span class="badge fs-5 text-bg-light">{{.SeriesStatus}}</span>{{end}}
+    {{if .SeriesStakes}}<span class="badge fs-5 text-bg-secondary">{{.SeriesStakes}}</span>{{end}}
+  </div>
+</div>
+{{end}}
+{{$season := .Match.Time.Year}}
 <div class="row card card-body bg-red">
   {{if eq .Match.Type playoffMatch}}
   <h4><b>Alliance {{.Match.PlayoffRedAlliance}}</b></h4>
   {{end}}
-  {{template "team" dict "alliance" "red" "team" (index .Teams "R1") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "red" "team" (index .Teams "R2") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "red" "team" (index .Teams "R3") "rankings" .Rankings}}
+  {{template "team" dict "team" (index .Teams "R1") "rankings" .Rankings "records" .Records "season" $season}}
+  {{template "team" dict "team" (index .Teams "R2") "rankings" .Rankings "records" .Records "season" $season}}
+  {{template "team" dict "team" (index .Teams "R3") "rankings" .Rankings "records" .Records "season" $season}}
   {{range $team := .RedOffFieldTeams}}
-  {{template "team" dict "alliance" "red" "team" $team "rankings" $.Rankings "isOffField" true}}
+  {{template "team" dict "team" $team "rankings" $.Rankings "records" $.Records "season" $season "isOffField" true}}
   {{end}}
 </div>
 <div class="row card card-body bg-blue">
   {{if eq .Match.Type playoffMatch}}
   <h4><b>Alliance {{.Match.PlayoffBlueAlliance}}</b></h4>
   {{end}}
-  {{template "team" dict "alliance" "blue" "team" (index .Teams "B1") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "blue" "team" (index .Teams "B2") "rankings" .Rankings}}
-  {{template "team" dict "alliance" "blue" "team" (index .Teams "B3") "rankings" .Rankings}}
+  {{template "team" dict "team" (index .Teams "B1") "rankings" .Rankings "records" .Records "season" $season}}
+  {{template "team" dict "team" (index .Teams "B2") "rankings" .Rankings "records" .Records "season" $season}}
+  {{template "team" dict "team" (index .Teams "B3") "rankings" .Rankings "records" .Records "season" $season}}
   {{range $team := .BlueOffFieldTeams}}
-  {{template "team" dict "alliance" "blue" "team" $team "rankings" $.Rankings "isOffField" true}}
+  {{template "team" dict "team" $team "rankings" $.Rankings "records" $.Records "season" $season "isOffField" true}}
   {{end}}
 </div>
 {{end}}
@@ -28,26 +39,32 @@
   <div class="col-sm-2">
     <h2><b>{{.team.Id}}</b>{{if .isOffField}}<span style="font-size: 0.5em;"> (not on field)</span>{{end}}</h2>
   </div>
-  <div class="col-sm-4"><h2>{{.team.Nickname}}</h2></div>
+  <div class="col-sm-4">
+    <h2 class="mb-0">{{.team.Nickname}}</h2>
+    {{if eq .team.RookieYear .season}}
+    <span class="badge text-bg-warning mb-2">Rookie team</span>
+    {{else if .team.RookieYear}}
+    <div class="text-body-secondary mb-2">Since {{.team.RookieYear}}</div>
+    {{end}}
+  </div>
   <div class="col-sm-2"><h5>{{.team.SchoolName}}</h5></div>
-  <div class="col-sm-3">
+  <div class="col-sm-2">
     <div><h5>{{.team.City}}, {{.team.StateProv}}, {{.team.Country}}</h5></div>
   </div>
   <div class="col-sm-1">
-    <div class="row">
-      <div class="col-sm-6">{{if index .rankings (itoa .team.Id)}}{{index .rankings (itoa .team.Id)}}{{end}}</div>
-      <div class="col-sm-6">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="$('#team{{.team.Id}}Details').modal('show');">
-          More
-        </button>
-      </div>
-    </div>
+    <h4 class="mb-0">{{if index .rankings (itoa .team.Id)}}{{index .rankings (itoa .team.Id)}}{{end}}</h4>
+    {{with index .records (itoa .team.Id)}}<div class="text-body-secondary">{{.}}</div>{{end}}
+  </div>
+  <div class="col-sm-1 text-end">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="$('#team{{.team.Id}}Details').modal('show');">
+      More
+    </button>
   </div>
   <div id="team{{.team.Id}}Details" class="modal">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
-          <h4 class="modal-title">Team {{.team.Id}}</span></h4>
+          <h4 class="modal-title">Team {{.team.Id}}{{if .team.Nickname}} &ndash; {{.team.Nickname}}{{end}}</h4>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">

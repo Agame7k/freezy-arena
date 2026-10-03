@@ -34,6 +34,7 @@
     blue: ["#4da3ff", "#2466c2", "#a8d2ff", "#ffffff", "#ffd166"],
     tie: ["#ff5571", "#4da3ff", "#ffd166", "#ffffff"],
   };
+  const championConfettiColors = ["#ffd166", "#ffe8a3", "#ffffff", "#e0a526"];
   // The timeline, in milliseconds from the start: the race, the two trails winding around the orb, the orb pulling
   // everything in, and a held breath before it goes off.
   const timeline = {
@@ -691,11 +692,22 @@
       const raceFraction = Math.max(0, Math.min(1, (elapsed - timeline.raceStart) / timeline.raceMs));
       const swirlSeconds = Math.max(0, (elapsed - timeline.swirlStart) / 1000);
       const swirlFraction = Math.min(1, swirlSeconds / (timeline.swirlMs / 1000));
-      const implodeFraction = Math.max(0, Math.min(1, (elapsed - timeline.implodeStart) / timeline.implodeMs));
+      // Eased so the collapse settles into the held breath rather than stopping dead, which reads as a dropped frame.
+      const implodeLinear = Math.max(0, Math.min(1, (elapsed - timeline.implodeStart) / timeline.implodeMs));
+      const implodeFraction = implodeLinear * implodeLinear * (3 - 2 * implodeLinear);
+      // Through the held breath the frame keeps moving: the view keeps creeping in, the charge keeps building and the
+      // collapsed orb throbs in time with the two heartbeat thumps, so the screen never sits frozen.
+      const breathSeconds = Math.max(0, (elapsed - timeline.implodeStart - timeline.implodeMs) / 1000);
+      const breathFraction = Math.min(1, breathSeconds / (timeline.breathMs / 1000));
+      const thump = function (at, width) {
+        return Math.exp(-Math.pow((breathSeconds - at) / width, 2));
+      };
+      const heartbeatPulse = breathSeconds > 0 ? thump(0.03, 0.05) + 0.7 * thump(0.2, 0.05) : 0;
       const exploded = explodeTime !== null;
 
       // The view closes in on the orb while the trails wind around it.
-      const zoom = exploded ? 1 : 1 + 0.35 * swirlFraction * swirlFraction + 0.1 * implodeFraction;
+      const zoom = exploded ? 1 :
+        1 + 0.35 * swirlFraction * swirlFraction + 0.1 * implodeFraction + 0.08 * breathFraction * breathFraction;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
       context.setTransform(ratio * zoom, 0, 0, ratio * zoom, ratio * orb.x * (1 - zoom), ratio * orb.y * (1 - zoom));
@@ -727,9 +739,9 @@
         // point as it pulls them in.
         const orbVisible = Math.max(0, Math.min(1, (elapsed - (timeline.swirlStart - 1200)) / 900));
         if (orbVisible > 0) {
-          const radius = orb.radius * (0.6 + 0.4 * orbVisible) * (1 - 0.75 * implodeFraction);
+          const radius = orb.radius * (0.6 + 0.4 * orbVisible) * (1 - 0.75 * implodeFraction) * (1 + 0.45 * heartbeatPulse);
           const orbitNow = orbitRadius * (1 - 0.18 * swirlFraction) * (1 - implodeFraction);
-          const charge = swirlFraction + implodeFraction;
+          const charge = swirlFraction + implodeFraction + 0.5 * breathFraction + 0.6 * heartbeatPulse;
           const flicker = 0.85 + 0.15 * Math.sin(elapsed * 0.05 * (1 + 3 * swirlFraction));
 
           // Each trail as a comet tail wound round the orb, split into the parts behind and in front of it.
@@ -841,9 +853,20 @@
     const standings = $("#winnerRevealStandings").empty();
     if (data.isPlayoff) {
       const winner = data.left.color === data.winner ? data.left : data.right.color === data.winner ? data.right : null;
-      if (winner !== null && winner.destination !== "") {
-        $("<div class='reveal-destination'>").text(winner.destination).appendTo(standings);
+      if (data.champion) {
+        // The champions are named team by team in place of the generic "Tournament Winner".
+        $("<div class='reveal-destination'>").text(data.championTeams.join("  ·  ")).appendTo(standings);
+        return;
       }
+      if (winner !== null && winner.destination !== "") {
+        // The server formats the destination as HTML with an en dash entity; decode it since this is set as text.
+        $("<div class='reveal-destination'>").text(winner.destination.replace(/&ndash;/g, "–")).appendTo(standings);
+      }
+      return;
+    }
+    if (data.unrankedLabel !== "") {
+      // There are no ranking points to show for a match that doesn't count towards the rankings.
+      $("<div class='reveal-destination'>").text(data.unrankedLabel).appendTo(standings);
       return;
     }
     [data.left, data.right].forEach(function (alliance) {
@@ -903,26 +926,36 @@
     revealSound.tension((timeline.implodeStart + 300) / 1000);
     revealSound.whoosh(0.8, timeline.raceStart / 1000, 0.3);
     race.start(revealSound.zip);
-    await wait(timeline.swirlStart);
+    // Each beat is timed from the start of the race rather than chained off the one before, so timer lateness can't
+    // build up and leave the canvas, which runs on the race clock, sitting past its end waiting for the explosion.
+    const raceStartedAt = performance.now();
+    const waitUntil = function (ms) {
+      return wait(Math.max(0, ms - (performance.now() - raceStartedAt)));
+    };
+    await waitUntil(timeline.swirlStart);
 
     // The swirl: both trails wind round the orb, faster and tighter, as it charges.
     revealSound.swirl(timeline.swirlMs / 1000);
-    await wait(timeline.swirlMs);
+    await waitUntil(timeline.implodeStart);
 
     // The orb pulls everything in, and the sound drops out for a heartbeat.
     revealSound.implode(timeline.implodeMs / 1000);
-    await wait(timeline.implodeMs);
+    await waitUntil(timeline.implodeStart + timeline.implodeMs);
     revealSound.heartbeat();
-    await wait(timeline.breathMs);
+    await waitUntil(timeline.explodeAt);
 
     // It goes off: a flash and shockwaves, the blast wave uncovering the winner's color behind it, light rays, the
     // result stamping down and the confetti going off around it.
+    reveal.attr("data-champion", data.champion ? "" : null);
     reveal.attr("data-winner", data.winner);
     revealSound.impact(data.winner);
     race.explode(burstColors[data.winner]);
     DisplayEffects.confetti.fire(confettiColors[data.winner], {amount: isTie ? 0.8 : 1.1, delay: 200});
     if (!isTie) {
       DisplayEffects.confetti.fire(confettiColors[data.winner], {amount: 0.7, delay: 1200});
+    }
+    if (data.champion) {
+      DisplayEffects.confetti.fire(championConfettiColors, {amount: 0.9, delay: 2200});
     }
     animate("#winnerRevealFlash", [{opacity: 1}, {opacity: 0}], 800, "ease-out");
     shake(26, 700);
@@ -1004,6 +1037,14 @@
       };
       const red = alliance("red");
       const blue = alliance("blue");
+      // The match that decides the event gets the champions' treatment rather than a plain win.
+      const winningAlliance = winner === "red" ? red : winner === "blue" ? blue : null;
+      const champion = isPlayoff && winningAlliance !== null && winningAlliance.destination === "Tournament Winner";
+      const championTeams = !champion ? [] : (winner === "red" ?
+        [data.Match.Red1, data.Match.Red2, data.Match.Red3] : [data.Match.Blue1, data.Match.Blue2, data.Match.Blue3]
+      ).filter(function (teamId) {
+        return teamId > 0;
+      });
       const left = redSide === "left" ? red : blue;
       const right = redSide === "left" ? blue : red;
       const cards = buildRevealCards(data, isPlayoff);
@@ -1013,9 +1054,14 @@
       return {
         winner: winner,
         isPlayoff: isPlayoff,
+        // Practice and test matches don't count towards the rankings; this names the kind of match instead.
+        unrankedLabel: data.Match.Type === matchTypePractice ? "Practice Match" :
+          data.Match.Type === matchTypeQualification || isPlayoff ? "" : "Test Match",
         kicker: data.Match.LongName + (data.Match.NameDetail ? " – " + data.Match.NameDetail : ""),
         title: winner === "tie" ? "TIE MATCH" : (winner === "red" ? red : blue).label.toUpperCase(),
-        verdict: winner === "tie" ? "" : "WINS",
+        verdict: winner === "tie" ? "" : champion ? "EVENT CHAMPIONS" : "WINS",
+        champion: champion,
+        championTeams: championTeams,
         left: left,
         right: right,
         leftScore: left.score,

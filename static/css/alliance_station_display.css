@@ -82,9 +82,6 @@ body[data-mode=timeout] .mode#match {
 #preMatch, #inMatch {
   display: none;
 }
-#match[data-state=PRE_MATCH] #preMatch, #match[data-state=POST_MATCH] #preMatch {
-  display: block;
-}
 #match[data-state=AUTO_PERIOD] #inMatch, #match[data-state=PAUSE_PERIOD] #inMatch,
 #match[data-state=TELEOP_PERIOD] #inMatch, #match[data-state=TIMEOUT_ACTIVE] #inMatch,
 #match[data-state=POST_TIMEOUT] #inMatch {
@@ -97,12 +94,11 @@ body[data-mode=timeout] .mode#match {
   position: absolute;
   left: 0;
   right: 0;
-  margin: auto;
-  margin-top: -250px;
-  height: 250px;
   top: 50%;
-  font-size: 500px;
-  line-height: 500px;
+  transform: translateY(-50%);
+  /* Sized to the screen in both directions so it fits monitors of any shape. */
+  font-size: min(26vw, 60vh);
+  line-height: 1;
   text-align: center;
 }
 body[data-position=left] #inMatch #redScore {
@@ -111,36 +107,41 @@ body[data-position=left] #inMatch #redScore {
 }
 body[data-position=middle] #inMatch #timeRemaining {
   display: block;
-  font-size: 32vw;
+  font-size: min(32vw, 70vh);
 }
 body[data-position=right] #inMatch #blueScore {
   display: block;
   color: #07f;
 }
 
-/* Pre Match */
-#preMatch #teamNumber {
+/* Pre Match: the team number over its name, stacked in the middle of the screen and sized against both the width and the
+   height so it fits monitors of any shape. */
+#match[data-state=PRE_MATCH] #preMatch, #match[data-state=POST_MATCH] #preMatch {
   position: absolute;
-  top: 1px;
-  left: 0;
-  right: 0;
-  margin: 0 auto;
-  font-size: 28vw;
-  line-height: 450px;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 3vw;
+}
+#preMatch #teamNumber {
+  font-size: min(28vw, 48vh);
+  line-height: 1;
   text-align: center;
 }
 #preMatch .databar {
-  position: absolute;
-  bottom: 100px;
-  left: 0;
-  right: 0;
-  margin: 0 auto;
-  height: 200px;
-  line-height: 200px;
+  max-width: 100%;
+  margin-top: 3vh;
+  padding: 0 0.3em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   text-align: center;
   font-family: "FuturaLT";
-  font-size: clamp(32px, 8vw, 120px); /* Responsive font size */
-  line-height: 1.3;
+  font-size: min(8vw, 11vh);
+  line-height: 1.15;
   color: #fff;
 }
 #preMatch .databar#disabled {
@@ -148,7 +149,7 @@ body[data-position=right] #inMatch #blueScore {
   display: none;
 }
 #preMatch sub {
-  font-size: 50px;
+  font-size: 0.45em;
 }
 #match[data-status=bypass] #disabled {
   display: block;
@@ -166,14 +167,10 @@ body[data-position=right] #inMatch #blueScore {
   background-color: transparent;
 }
 #playoffAllianceInfo {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
-  margin: 0 auto;
+  margin-top: 2vh;
   text-align: center;
   font-family: "FuturaLT";
-  font-size: 50px;
+  font-size: min(3.5vw, 6vh);
 }
 
 /*styling for a/e stop*/
@@ -186,4 +183,15 @@ body[data-position=right] #inMatch #blueScore {
 }
 @keyframes blink-orange {
   50% { opacity: 0.3; }
+}
+
+/* Every station shows the clock during a timeout, whichever screen mode the stations were left in. */
+body #match[data-state=TIMEOUT_ACTIVE] #inMatch .datapoint,
+body #match[data-state=POST_TIMEOUT] #inMatch .datapoint {
+  display: none;
+}
+body #match[data-state=TIMEOUT_ACTIVE] #inMatch #timeRemaining,
+body #match[data-state=POST_TIMEOUT] #inMatch #timeRemaining {
+  display: block;
+  font-size: min(32vw, 70vh);
 }

@@ -3,50 +3,71 @@
   Author: pat@patfairbank.com (Patrick Fairbank)
 */
 
+@import url("/static/css/display_theme.css");
+
 html {
   height: 100%;
   cursor: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   overflow: hidden;
+  background: var(--backdrop);
 }
 body {
   height: 100%;
-  background: -moz-linear-gradient(top, #003375 1%, #3C679D 100%); /* FF3.6+ */
-  background: -webkit-linear-gradient(top, #003375 1%, #3C679D 100%); /* Chrome10+,Safari5.1+ */
-  background-repeat: no-repeat;
+  background: radial-gradient(ellipse at top, #16304f, var(--backdrop) 70%);
+  color: #f8fafc;
+  font-family: "FuturaLTBold";
 }
 #header {
-  padding: 10px 0px;
+  padding: 24px 0 18px;
   font-size: 40px;
-  font-family: "FuturaLTBold";
   color: #fff;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+#header .text-end {
+  color: var(--gold);
+}
 .card {
-  background-color: #ccc;
-  border: 1px solid #333;
-  padding: 10px;
-  margin-top: 0px;
+  margin-top: 0;
   margin-bottom: 15px;
+  padding: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+  color: #f8fafc;
+}
+.card h1 {
+  font-family: "FuturaLTBold";
+  font-size: 40px;
+  white-space: nowrap;
+}
+/* The first card is the match on the field; the rest are queued behind it. */
+#matches > .row:first-child .card h1 {
+  color: var(--gold);
 }
 #matchState, #matchTime {
   font-size: 25px;
-  color: #666;
+  color: var(--muted-text);
+  text-transform: uppercase;
 }
 #matchTime {
-  font-weight: bold;
+  color: #fff;
 }
 .red-teams, .blue-teams {
   font-family: FuturaLTBold;
   line-height: 48px;
   font-size: 42px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .red-teams {
-  color: #ff4444;
+  color: var(--red-accent);
 }
 .blue-teams {
-  color: #2080ff;
+  color: var(--blue-accent);
 }
 .avatars {
   line-height: 48px;
@@ -55,8 +76,8 @@ body {
   position: absolute;
   bottom: 40px;
   font-size: 25px;
-  font-family: "FuturaLTBold";
   color: #fff;
+  letter-spacing: 0.04em;
   text-align: center;
   text-transform: uppercase;
 }
@@ -75,10 +96,8 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #fc0;
-  color: #333;
+  background-color: var(--gold);
+  color: var(--navy);
   border-radius: 50%;
-  border: 1px solid #333;
   font-size: 25px;
-  font-weight: bold;
 }

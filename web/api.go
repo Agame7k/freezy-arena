@@ -45,6 +45,7 @@ type allianceMatchup struct {
 	RedAlliance        *model.Alliance
 	BlueAlliance       *model.Alliance
 	IsActive           bool
+	IsAborted          bool
 	SeriesLeader       string
 	SeriesStatus       string
 	IsComplete         bool
@@ -298,6 +299,10 @@ func (web *Web) generateBracketSvg(w io.Writer, activeMatch *model.Match) error 
 			if activeMatch != nil {
 				allianceMatchup.IsActive = activeMatch.PlayoffMatchGroupId == matchup.Id()
 			}
+			// Flag the matchup whose match was just aborted, regardless of which match the caller highlights as active.
+			currentMatch := web.arena.CurrentMatch
+			allianceMatchup.IsAborted = web.arena.MatchAborted() && currentMatch != nil &&
+				currentMatch.Type == model.Playoff && currentMatch.PlayoffMatchGroupId == matchup.Id()
 			allianceMatchup.SeriesLeader, allianceMatchup.SeriesStatus = matchup.StatusText()
 			matchups[matchup.Id()] = &allianceMatchup
 		}
@@ -335,8 +340,8 @@ func (web *Web) allianceStatusApiHandler(w http.ResponseWriter, r *http.Request)
 	// Preload the JSON as a string
 	var allianceStations = web.arena.AllianceStations
 
-   	// Iterate through the slice of AllianceStation structs
-   	for i := range allianceStations {
+	// Iterate through the slice of AllianceStation structs
+	for i := range allianceStations {
 		// If the struct has a Team field, remove or clear it
 		allianceStations[i].Team = nil // Remove Team information
 	}

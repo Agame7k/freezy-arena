@@ -133,6 +133,7 @@ const audienceRevealStartMs = {
   logo: 1000,
   logoLuma: 2300,
   bracket: 1000,
+  standings: 1000,
   sponsor: 1950,
 };
 const audienceRevealStartDefaultMs = 4000;
@@ -159,7 +160,8 @@ const handleAudienceDisplayMode = function (targetScreen) {
     targetScreen !== "score" &&
     targetScreen !== "match" &&
     targetScreen !== "timeout" &&
-    targetScreen !== "logo"
+    targetScreen !== "logo" &&
+    targetScreen !== "standings"
   ) {
     targetScreen = "blank";
   }
@@ -400,6 +402,9 @@ const transitionTimeoutToIntro = function (callback) {
 const handleScorePosted = function (data) {
   MatchIntro.buildResult(data, redSide, blueSide, DisplayShared.getAvatarUrl);
   revealData = WinnerReveal.buildData(data, redSide);
+  if (currentScreen === "standings") {
+    standingsTable.refresh();
+  }
 };
 
 // Plays the same winner reveal as the audience display, started at the same moment so the two run in step (muted, as
@@ -452,6 +457,34 @@ const transitionTeamIntroToMatch = function (callback) {
   transitionBlankToMatch(callback);
 };
 
+// The qualification standings, built once the page has loaded, and a function to size them to the wall.
+let standingsTable = null;
+let fitStandings = function () {};
+
+// The standings drop in where the bar would be and roll through their pages until the operator moves on.
+const transitionBlankToStandings = function (callback) {
+  hideMessage(async function () {
+    await standingsTable.load();
+    standingsTable.render(0, 300);
+    standingsTable.startCycle();
+    $("#standings").show();
+    fitStandings();
+    document.getElementById("standings").animate([
+      {opacity: 0, translate: "0 -24px"},
+      {opacity: 1, translate: "0 0"},
+    ], {duration: 700, easing: flourishEase, fill: "forwards"}).finished.then(callback, callback);
+  });
+};
+
+const transitionStandingsToBlank = function (callback) {
+  standingsTable.stopCycle();
+  document.getElementById("standings").animate([{opacity: 1}, {opacity: 0}], {duration: 400, fill: "forwards"})
+    .finished.then(function () {
+      $("#standings").hide();
+      showMessage(callback);
+    }, callback);
+};
+
 const showMessage = function (callback) {
   if (!hasMessage) {
     if (callback) {
@@ -494,6 +527,20 @@ $(function () {
   const overlayCentering = $("#overlayCentering");
   overlayCentering.css("top", parseInt(urlParams.get("topSpacingPx")) + overlayTopOffset + "px");
   overlayCentering.css("transform", `scale(${urlParams.get("zoomFactor")})`);
+  // The standings hang just below the logo circle, as they do under the disc on the audience display, and are scaled to
+  // fill whatever room is left on the wall, whatever its shape.
+  const standingsTop = parseInt(urlParams.get("topSpacingPx")) + overlayTopOffset +
+    150 * parseFloat(urlParams.get("zoomFactor")) + 20;
+  fitStandings = function () {
+    const standings = document.getElementById("standings");
+    const scale = Math.min(
+      (window.innerWidth - 40) / standings.offsetWidth,
+      (window.innerHeight - standingsTop - 20) / standings.offsetHeight,
+    );
+    $(standings).css({top: standingsTop + "px", transform: `translateX(-50%) scale(${scale})`});
+  };
+  window.addEventListener("resize", fitStandings);
+  standingsTable = StandingsTable.create(document.getElementById("standingsPanel"));
 
   messageText = urlParams.get("message") || "";
   hasMessage = messageText !== "";
@@ -537,6 +584,7 @@ $(function () {
       logo: transitionBlankToLogo,
       match: transitionBlankToMatch,
       score: transitionBlankToScore,
+      standings: transitionBlankToStandings,
       teamIntro: transitionBlankToTeamIntro,
       timeout: transitionBlankToTimeout,
     },
@@ -554,6 +602,9 @@ $(function () {
     },
     score: {
       blank: transitionScoreToBlank,
+    },
+    standings: {
+      blank: transitionStandingsToBlank,
     },
     teamIntro: {
       blank: transitionTeamIntroToBlank,

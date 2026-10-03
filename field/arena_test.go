@@ -1370,3 +1370,22 @@ func TestSignalReset(t *testing.T) {
 	assert.Equal(t, "fieldReset", arena.AllianceStationDisplayMode)
 	assertHubLedModes(led.GreenMode, led.GreenMode)
 }
+
+func TestMatchTimeMessageReportsAbort(t *testing.T) {
+	arena := setupTestArena(t)
+	for _, station := range []string{"R1", "R2", "R3", "B1", "B2", "B3"} {
+		arena.AllianceStations[station].Bypass = true
+	}
+
+	assert.Nil(t, arena.StartMatch())
+	arena.Update()
+	assert.False(t, arena.generateMatchTimeMessage().(MatchTimeMessage).MatchAborted)
+
+	assert.Nil(t, arena.AbortMatch())
+	message := arena.generateMatchTimeMessage().(MatchTimeMessage)
+	assert.Equal(t, PostMatch, message.MatchState)
+	assert.True(t, message.MatchAborted)
+
+	assert.Nil(t, arena.ResetMatch())
+	assert.False(t, arena.generateMatchTimeMessage().(MatchTimeMessage).MatchAborted)
+}

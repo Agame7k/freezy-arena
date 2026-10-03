@@ -31,6 +31,8 @@ var handleEventStatus = function (data) {
 };
 
 $(function () {
+  DisplayShared.fitStage();
+
   // Set up the websocket back to the server.
   websocket = new CheesyWebsocket("/displays/queueing/websocket", {
     eventStatus: function (event) {

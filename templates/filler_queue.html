@@ -22,7 +22,7 @@
           {{range .Matches}}
           <tr>
             <td>{{.ShortName}}</td>
-            <td>{{.Time.Format "15:04"}}</td>
+            <td>{{.Time.Local.Format "3:04 PM"}}</td>
             <td class="text-danger fw-bold">{{.Red1}}, {{.Red2}}, {{.Red3}}</td>
             <td class="text-primary fw-bold">{{.Blue1}}, {{.Blue2}}, {{.Blue3}}</td>
             <td>
@@ -41,7 +41,7 @@
 
   <!-- Add Match -->
   <div class="card rounded-3 shadow-sm" style="max-width: 500px;">
-    <div class="card-header bg-primary text-white rounded-top">
+    <div class="card-header bg-secondary text-white rounded-top">
       <h4 class="mb-0">Add Practice Match</h4>
     </div>
     <div class="card-body">

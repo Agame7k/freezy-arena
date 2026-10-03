@@ -4,63 +4,89 @@
   Author: pat@patfairbank.com (Patrick Fairbank)
 */
 
+@import url("/static/css/display_theme.css");
+
 html {
   height: 100%;
-  cursor: default;
+  overflow: hidden;
+  cursor: none;
   -webkit-user-select: none;
   -moz-user-select: none;
+  background: var(--backdrop);
 }
 body {
   height: 100%;
-  background: -moz-linear-gradient(top, #003375 1%, #3C679D 100%); /* FF3.6+ */
-  background: -webkit-linear-gradient(top, #003375 1%, #3C679D 100%); /* Chrome10+,Safari5.1+ */
-  background-repeat: no-repeat;
+  background: radial-gradient(ellipse at top, #16304f, var(--backdrop) 70%);
   font-family: "FuturaLT";
 }
+/* Title, table and status line stacked to exactly fill the screen, with the table taking whatever is left. */
 #column {
   width: 80%;
   height: 100%;
   margin: 0 auto;
+  padding-bottom: 20px;
+  display: flex;
+  flex-direction: column;
 }
 #titlebar {
-  padding: 20px 0px;
+  flex: none;
+  padding: 24px 0 18px;
   line-height: 50px;
   font-size: 40px;
   font-family: "FuturaLTBold";
   color: #fff;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+#titlebar .text-end {
+  color: var(--gold);
+}
 #standings {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-radius: 10px;
-  background-color: #fff;
-  padding: 10px;
-  height: 85%;
+  overflow: hidden;
+  background: #f8fafc;
+  box-shadow: var(--panel-shadow);
 }
 #header {
+  flex: none;
   width: 100%;
+  background: var(--navy);
+  color: var(--gold);
+  font-family: "FuturaLTBold";
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  line-height: 44px;
   text-align: center;
-  font-size: 15px;
-  font-weight: bold;
-  color: #000;
-  border-bottom: 1px solid #000;
+  text-transform: uppercase;
 }
 #container {
-  height: 93%;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: hidden;
 }
 #footer {
-  text-align: right;
+  flex: none;
+  padding: 6px 16px;
+  border-top: 1px solid #d4d9e1;
+  color: #4a5568;
   font-size: 15px;
-  color: #000;
-  border-top: 1px solid #000;
+  text-align: right;
 }
 .rankings-table {
   table-layout: fixed;
-  text-align: center;
-  font-size: 17px;
-  color: #000;
-  border-bottom: 3px solid #666;
   margin: 0;
+  color: var(--navy);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.rankings-table > :not(caption) > * > * {
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 .team-field {
   width: 8%;
@@ -69,6 +95,7 @@ body {
   width: 20%;
   overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
   text-align: left;
 }
 .rankings-table > tbody > tr > td {
@@ -76,10 +103,12 @@ body {
   padding-right: 0;
 }
 #earlyLateMessage {
-  margin-top: 10px;
+  flex: none;
+  margin-top: 14px;
   font-size: 25px;
   font-family: "FuturaLTBold";
   color: #fff;
+  letter-spacing: 0.04em;
   text-align: center;
   text-transform: uppercase;
 }

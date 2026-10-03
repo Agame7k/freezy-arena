@@ -233,3 +233,26 @@ textarea {
   color: #2080ff;
 }
 
+
+/* Match abort ------------------------------------------------------------------------------------------------------- */
+
+/* The status row stays striped red from the abort until the match is reset. */
+#matchStatusRow[data-aborted="true"] {
+  background: repeating-linear-gradient(-45deg, #8b1020 0 24px, #b0182c 24px 48px);
+  background-size: 67.9px 67.9px;
+  animation: abort-stripe-scroll 1.2s linear infinite;
+}
+#matchStatusRow[data-aborted="true"] #matchState {
+  color: #ffd166;
+}
+#matchStateAllianceStation[data-aborted="true"] {
+  color: #f44;
+}
+@keyframes abort-stripe-scroll {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 67.9px 0;
+  }
+}

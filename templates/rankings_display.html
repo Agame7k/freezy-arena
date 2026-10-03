@@ -17,8 +17,8 @@ Display for showing team rankings.
   <body>
     <div id="column">
       <div id="titlebar" class="row justify-content-between">
-        <div class="col-lg-4 text-start">Team Standings</div>
-        <div class="col-lg-4 text-end">{{.EventSettings.Name}}</div>
+        <div class="col text-start text-nowrap">Team Standings</div>
+        <div class="col text-end text-nowrap">{{.EventSettings.Name}}</div>
       </div>
       <div id="standings">
         <table id="header">
@@ -71,6 +71,7 @@ Display for showing team rankings.
     <script src="/static/js/lib/jquery.websocket-0.0.1.js"></script>
     <script src="/static/js/lib/jquery.transit.min.js"></script>
     <script src="/static/js/cheesy-websocket.js"></script>
+    <script src="/static/js/display_shared.js"></script>
     <script src="/static/js/rankings_display.js"></script>
   </body>
 </html>

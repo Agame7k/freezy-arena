@@ -18,6 +18,20 @@
       return "/api/teams/" + teamId + "/avatar";
     },
 
+    // Scales a page laid out in fixed pixels for a 1920x1080 screen so that it fits whatever screen it's shown on. It
+    // zooms by whichever of width and height is tighter, so on a screen of a different shape the layout gets extra room
+    // along the other axis rather than being cropped or letterboxed, and edge-anchored elements stay on their edges.
+    // Layers sized in viewport units already fit any screen; they undo the zoom by reading --stage-zoom.
+    fitStage: function () {
+      const fit = function () {
+        const zoom = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+        document.documentElement.style.zoom = zoom;
+        document.documentElement.style.setProperty("--stage-zoom", zoom);
+      };
+      fit();
+      window.addEventListener("resize", fit);
+    },
+
     // Returns the points in a live score summary that are worth calling out as they happen, by the label to call them
     // out with. Fuel isn't among them: it scores almost continuously, so it just moves the number. Teleop tower points
     // aren't either, since they're only added after the match.

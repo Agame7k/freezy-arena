@@ -39,8 +39,8 @@ func TestAnnouncerDisplayScorePosted(t *testing.T) {
 		winner string
 		class  string
 	}{
-		{game.RedWonMatch, "Red", "bg-danger"},
-		{game.BlueWonMatch, "Blue", "bg-primary"},
+		{game.RedWonMatch, "Red Wins", "bg-danger"},
+		{game.BlueWonMatch, "Blue Wins", "bg-primary"},
 		{game.TieMatch, "Tie", "bg-tie"},
 	} {
 		match := model.Match{Type: model.Qualification, LongName: "Qual 17", Status: test.status}
@@ -49,7 +49,7 @@ func TestAnnouncerDisplayScorePosted(t *testing.T) {
 		recorder := web.getHttpResponse("/displays/announcer/score_posted")
 		assert.Equal(t, 200, recorder.Code)
 		assert.Contains(t, recorder.Body.String(), "Qual 17")
-		assert.Contains(t, recorder.Body.String(), "Winner: "+test.winner)
+		assert.Contains(t, recorder.Body.String(), test.winner)
 		assert.Contains(t, recorder.Body.String(), test.class)
 	}
 }

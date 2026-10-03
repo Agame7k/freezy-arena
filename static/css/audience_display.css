@@ -3,32 +3,25 @@
   Author: pat@patfairbank.com (Patrick Fairbank)
 */
 
+@import url("/static/css/display_theme.css");
+@import url("/static/css/standings_table.css");
 @import url("/static/css/display_overlay_shared.css");
 @import url("/static/css/match_intro.css");
 @import url("/static/css/winner_reveal.css");
 
-/* Alliance colors. The accents are for text, lines and glows on dark backgrounds; the outer/inner pairs are the panel
-   gradients, lighter at the outside edge of the screen and darker towards the middle. body[data-reversed] swaps which
-   side of the screen each alliance is on. */
+/* The alliance colors come from display_theme.css; body[data-reversed] swaps which side of the screen each alliance is
+   on. */
 body {
-  --red-accent: #ff5571;
-  --blue-accent: #4da3ff;
-  --red-outer: #b0243f;
-  --red-inner: #6e1530;
-  --blue-outer: #1f63b8;
-  --blue-inner: #123a70;
   --left-accent: var(--red-accent);
   --right-accent: var(--blue-accent);
-  --gold: #ffd166;
-  --navy: #0b1728;
-  background: #050a14;
+  background: var(--backdrop);
 }
 body[data-reversed=true] {
   --left-accent: var(--blue-accent);
   --right-accent: var(--red-accent);
 }
 html {
-  background: #050a14;
+  background: var(--backdrop);
 }
 
 /* Every alliance-colored panel (the score bar, the final score and the final team boxes) uses the same gradients. */
@@ -191,15 +184,104 @@ body[data-overlay-location=top] #phaseTab {
   top: 162px;
 }
 
-@media (max-width: 1100px) {
-  #matchOverlayTop {
-    gap: 8px;
-  }
+/* Before a qualification match, each alliance's rank and record sits above its end of the bar; before a playoff match,
+   the state of the series sits above the timer instead. Flipped below the bar when it's at the top of the screen. */
+.intro-standings,
+#introSeries {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  display: none;
+  opacity: 0;
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+  color: #f8fafc;
+  font-family: "FuturaLTBold";
+}
+/* Lined up with the ends of the intro bar, which is 650px wide. */
+#leftIntroStandings {
+  left: calc(50% - 325px);
+  border-left: 6px solid var(--left-accent);
+}
+#rightIntroStandings {
+  right: calc(50% - 325px);
+  border-right: 6px solid var(--right-accent);
+}
+.intro-standings-row {
+  display: grid;
+  grid-template-columns: 5ch 4ch 7ch;
+  gap: 14px;
+  align-items: baseline;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+.intro-standings-rank {
+  color: var(--gold);
+  text-align: right;
+}
+.intro-standings-record {
+  color: var(--muted-text);
+  font-size: 20px;
+}
+#introSeries {
+  left: 50%;
+  bottom: calc(100% + 44px);
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+}
+#introSeriesStatus {
+  color: var(--gold);
+  font-size: 24px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#introSeriesStakes {
+  color: #fff;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+}
+#introSeriesStatus:empty,
+#introSeriesStakes:empty {
+  display: none;
+}
+body[data-overlay-location=top] .intro-standings {
+  top: calc(100% + 14px);
+  bottom: auto;
+}
+body[data-overlay-location=top] #introSeries {
+  top: calc(100% + 44px);
+  bottom: auto;
+}
 
-  #leftTeams,
-  #rightTeams {
-    font-size: clamp(20px, 3vw, 42px);
-  }
+/* The break banner either side of the timer while a timeout runs, in the same dress as the match bar. */
+#timeoutDetails {
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(9, 20, 36, 0.98), rgba(18, 34, 57, 0.96));
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+  color: #f8fafc;
+  font-family: "FuturaLTBold";
+  text-transform: uppercase;
+}
+#timeoutBreakDescription {
+  color: var(--gold);
+  font-weight: normal;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+#timeoutNextMatch {
+  color: #b6c3d4;
+  font-weight: normal;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+}
+#timeoutNextMatchName {
+  color: #fff;
 }
 
 /* Full-screen backdrop, logo disc, final score, bracket and sponsors ------------------------------------------------ */
@@ -272,7 +354,7 @@ body[data-overlay-location=top] #phaseTab {
 }
 #finalScore {
   position: relative;
-  width: min(1200px, 90vw);
+  width: min(1200px, 90%);
   display: flex;
   flex-direction: column;
   background: #0c1728;
@@ -585,13 +667,38 @@ body[data-overlay-location=top] #phaseTab {
   bottom: 0;
   left: 0;
   right: 0;
-  margin: auto auto;
+  /* A fixed 1920x1080 box centered on screen, so it stays lined up with the logo disc on screens of other shapes. */
+  width: 1920px;
+  height: 1080px;
+  margin: auto;
   z-index: 1;
   opacity: 0;
   text-align: center;
 }
 #bracketSvg {
   width: 1920px;
+}
+
+/* Qualification standings, under the logo disc raised to the top of the screen as for the bracket. Uses the same
+   navy-and-gold table as the standalone rankings display. */
+#standings {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 1920px;
+  height: 1080px;
+  margin: auto;
+  z-index: 1;
+  display: none;
+  opacity: 0;
+}
+#standingsPanel {
+  position: absolute;
+  top: 290px;
+  left: 310px;
+  width: 1300px;
 }
 
 #sponsor {
@@ -722,7 +829,7 @@ body[data-overlay-location=top] #phaseTab {
 #pickCallout {
   position: absolute;
   left: 50%;
-  bottom: 7vh;
+  bottom: 7%;
   display: none;
   flex-direction: column;
   align-items: flex-start;
@@ -782,6 +889,18 @@ body[data-overlay-location=top] #phaseTab {
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
   clip-path: inset(0 100% 0 0);
 }
+/* Sits above the match bar, and the phase tab over it, whenever the bar is up along the bottom. */
+body[data-overlay-location=bottom][data-screen=match] #lowerThird,
+body[data-overlay-location=bottom][data-screen=timeout] #lowerThird {
+  bottom: 290px;
+}
+/* Higher again before a match, to clear the rank and record cards above the bar. */
+body[data-overlay-location=bottom][data-screen=intro] #lowerThird {
+  bottom: 380px;
+}
+#lowerThird {
+  transition: bottom 500ms cubic-bezier(0.65, 0, 0.35, 1);
+}
 #lowerThird::before {
   content: "";
   position: absolute;
@@ -813,4 +932,34 @@ body[data-overlay-location=top] #phaseTab {
   display: none;
   font-family: "FuturaLTBold";
   line-height: 87px;
+}
+
+/* Match abort ------------------------------------------------------------------------------------------------------- */
+
+/* The match circle and phase tab turn red when the match is aborted, until the bar is taken down. */
+#matchCircle[data-aborted=true] {
+  background: #d6283f;
+  border-color: #6e1530;
+  box-shadow: 0 0 0 2px rgba(255, 85, 113, 0.8), 0 0 40px rgba(214, 40, 63, 0.7);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+#matchCircle[data-aborted=true] #matchTime {
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+#phaseTab[data-phase=aborted] {
+  background: #d6283f;
+  color: #fff;
+}
+
+
+/* Stage scaling ----------------------------------------------------------------------------------------------------- */
+
+/* DisplayShared.fitStage() zooms the page to fit the screen. These full-screen layers are sized in viewport units and
+   fit any screen on their own, so they cancel the zoom back out. */
+#matchIntro,
+#winnerReveal,
+#celebrationConfetti,
+.abort-takeover {
+  zoom: calc(1 / var(--stage-zoom, 1));
 }

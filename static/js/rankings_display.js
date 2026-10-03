@@ -87,6 +87,7 @@ var handleEventStatus = function (data) {
 $(function () {
   // Read the configuration for this display from the URL query string.
   var urlParams = new URLSearchParams(window.location.search);
+  DisplayShared.fitStage();
   scrollMsPerRow = urlParams.get("scrollMsPerRow");
 
   // Set up the websocket back to the server. Used only for remote forcing of reloads.

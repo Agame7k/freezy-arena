@@ -12,6 +12,7 @@ Display shown on the screens above each driver station.
     <link rel="stylesheet" href="/static/css/lib/bootstrap.min.css"/>
     <link rel="stylesheet" href="/static/css/cheesy-arena.css"/>
     <link rel="stylesheet" href="/static/css/alliance_station_display.css"/>
+    <link rel="stylesheet" href="/static/css/abort_takeover.css"/>
   </head>
   <body>
     <div id="match" class="mode">
@@ -44,6 +45,7 @@ Display shown on the screens above each driver station.
     <script src="/static/js/lib/jquery.websocket-0.0.1.js"></script>
     <script src="/static/js/cheesy-websocket.js"></script>
     <script src="/static/js/match_timing.js"></script>
+    <script src="/static/js/abort_takeover.js"></script>
     {{if .EventSettings.FlashDSEnabled}}<script src="/static/js/alliance_station_display.js"></script>{{end}}
     {{if not .EventSettings.FlashDSEnabled}}<script src="/static/js/alliance_station_display_noflash.js"></script>{{end}}
     {{range $sound := .MatchSounds}}
