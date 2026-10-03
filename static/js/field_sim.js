@@ -16,6 +16,10 @@ const WALL_HEIGHT = 198;
 const STATION_SPACING = 250;
 const MONITOR_WIDTH = 120;
 const MONITOR_HEIGHT_ABOVE_WALL = 62;
+const DRIVER_MONITOR_WIDTH = 100;
+const TABLE_MONITOR_WIDTH = 70;
+const SIDE_SCREEN_WIDTH = 360;
+const STAND_SCREEN_WIDTH = 140;
 const SCREEN_WIDTH = 640;
 const ROBOT_SIZE = 76;
 const ROBOT_HEIGHT = 36;
@@ -23,6 +27,9 @@ const ROBOT_DISTANCE_FROM_WALL = 110;
 const DISPLAY_WIDTH_PX = 1920;
 const DISPLAY_HEIGHT_PX = 1080;
 const PERSPECTIVE_PX = 1600;
+const MIN_EYE_DISTANCE = 120;
+const MIN_ZOOM = -10;
+const MAX_ZOOM = 3;
 const HIDDEN_DISPLAY_UNLOAD_MS = 15000;
 // Robot states from dssim.RobotState: the signal light needs the roboRIO, and the robot is linked once code runs.
 const RIO_LINKED_STATE = 3;
@@ -37,10 +44,11 @@ const CAMERA_PRESETS = [
   { name: "Overhead", yaw: 0, tilt: -89, target: [0, 0, 0], zoom: 1.1 },
   { name: "Red wall", yaw: -90, tilt: -10, target: [-640, 200, 0], zoom: 0.34 },
   { name: "Blue wall", yaw: 90, tilt: -10, target: [640, 200, 0], zoom: 0.34 },
-  { name: "Big screen", yaw: 0, tilt: -6, target: [0, 360, -560], zoom: 0.62 },
-  { name: "Scoring table", yaw: 180, tilt: -28, target: [0, 80, -60], zoom: 1 },
+  { name: "Big screens", yaw: 0, tilt: -6, target: [0, 360, -760], zoom: 0.75 },
+  { name: "Scoring table", yaw: 180, tilt: -20, target: [-110, 105, -540], distance: 430 },
   { name: "Red hub", yaw: 28, tilt: -16, target: [-(FIELD_LENGTH / 2 - HUB_DISTANCE_FROM_WALL), 90, 0], zoom: 0.36 },
   { name: "Blue hub", yaw: -28, tilt: -16, target: [FIELD_LENGTH / 2 - HUB_DISTANCE_FROM_WALL, 90, 0], zoom: 0.36 },
+  { name: "Queue & audience side", yaw: 180, tilt: -14, target: [0, 130, 700], distance: 1100 },
 ];
 
 const sim = new SimState();
@@ -105,16 +113,48 @@ const box = function (className, width, height, depth) {
   return node;
 };
 
-const stationUrl = function (stationId) {
-  return (
-    "/displays/alliance_station?displayId=fieldsim-" + stationId + "&nickname=" +
-    encodeURIComponent("Field Sim " + stationId) + "&station=" + stationId
+// The real displays around the field, by key, as configured by the server.
+const displays = {};
+simConfig.Displays.forEach(function (display) {
+  displays[display.Key] = display;
+});
+const placedDisplays = {};
+
+// Places the display with the given key on a screen of the given width (in cm), turned by the given rotation.
+const placeDisplay = function (key, className, width, x, y, z, rotation) {
+  const display = displays[key];
+  if (!display) {
+    return null;
+  }
+  placedDisplays[key] = true;
+  const height = width * (DISPLAY_HEIGHT_PX / DISPLAY_WIDTH_PX);
+  place(panel("screen-back", width, height), x, y, z, (rotation || "") + " rotateY(180deg) translateZ(1px)");
+  return place(
+    buildScreen(display, className),
+    x,
+    y,
+    z,
+    (rotation ? rotation + " " : "") + "scale(" + width / DISPLAY_WIDTH_PX + ")"
   );
 };
 
-const AUDIENCE_URL =
-  "/displays/audience?displayId=fieldsim-audience&nickname=" + encodeURIComponent("Field Sim Audience") +
-  "&background=%23000&reversed=false&overlayLocation=bottom";
+// Places a display on a monitor stand whose foot is at the given height, with its name on a placard below the screen.
+const placeStandDisplay = function (key, width, x, baseY, z, rotation, postHeight) {
+  if (!displays[key]) {
+    return;
+  }
+  const height = width * (DISPLAY_HEIGHT_PX / DISPLAY_WIDTH_PX);
+  const centerY = baseY + postHeight + height / 2;
+  placeDisplay(key, "monitor", width, x, centerY, z, rotation);
+  place(panel("monitor-post", 6, postHeight), x, baseY + postHeight / 2, z, rotation + " translateZ(-3px)");
+  place(
+    panel("display-placard", width, 9),
+    x,
+    centerY - height / 2 - 7,
+    z,
+    rotation
+  ).appendChild(document.createTextNode(displays[key].Title));
+};
 
 // Builds the carpet with its markings and orientation labels.
 const buildCarpet = function () {
@@ -168,12 +208,14 @@ const buildAllianceWall = function (alliance) {
     const z = STATION_Z[stationId];
 
     // The monitor above the station shows the real alliance station display.
-    place(
-      buildScreen(stationUrl(stationId), "Alliance station display " + stationId, "monitor"),
+    placeDisplay(
+      "station-" + stationId,
+      "monitor",
+      MONITOR_WIDTH,
       wallX - behind * 4,
       WALL_HEIGHT + MONITOR_HEIGHT_ABOVE_WALL,
       z,
-      facing + " scale(" + MONITOR_WIDTH / DISPLAY_WIDTH_PX + ")"
+      facing
     );
     place(panel("monitor-post", 6, MONITOR_HEIGHT_ABOVE_WALL - 20), wallX + behind * 2, WALL_HEIGHT + 10, z, facing);
 
@@ -193,6 +235,17 @@ const buildAllianceWall = function (alliance) {
 
   // The timer sign at the audience end of the wall.
   signs[alliance + "Timer"] = buildSign(wallX, WALL_HEIGHT + 12, FIELD_WIDTH / 2 - 60, facing);
+
+  // The drivers' field monitor stands past the scoring table end of the wall, angled toward the drivers.
+  placeStandDisplay(
+    alliance + "-field-monitor",
+    DRIVER_MONITOR_WIDTH,
+    wallX + behind * 40,
+    0,
+    -(FIELD_WIDTH / 2 + 45),
+    "rotateY(" + behind * 15 + "deg)",
+    130
+  );
 };
 
 // Builds a two-sided team number / timer sign.
@@ -231,18 +284,23 @@ const buildRobot = function (alliance, stationId, x, z) {
   return { element: robot, number: number };
 };
 
-// Builds an embedded display: the real page at full size, scaled down by the caller.
-const buildScreen = function (url, title, className) {
+// Builds an embedded display: the real page at full size, scaled down by the caller. Displays that show content from
+// outside the arena are only loaded when enlarged.
+const buildScreen = function (display, className) {
   const screen = el("div", "w-screen " + className);
   screen.style.width = DISPLAY_WIDTH_PX + "px";
   screen.style.height = DISPLAY_HEIGHT_PX + "px";
   screen.style.marginLeft = -DISPLAY_WIDTH_PX / 2 + "px";
   screen.style.marginTop = -DISPLAY_HEIGHT_PX / 2 + "px";
   screen.dataset.action = "screen";
-  screen.dataset.url = url;
-  screen.dataset.title = title;
-  screen.title = title + " (click to enlarge)";
-  screen.appendChild(el("div", "screen-off", "Display off"));
+  screen.dataset.key = display.Key;
+  screen.title = display.Title + " - " + display.Type + " display (click to enlarge)";
+  if (display.External) {
+    screen.dataset.external = "true";
+    screen.appendChild(el("div", "screen-off", display.Title + ": click to view"));
+  } else {
+    screen.appendChild(el("div", "screen-off", "Display off"));
+  }
   screens.push(screen);
   setScreenLive(screen, displaysOn);
   return screen;
@@ -250,6 +308,7 @@ const buildScreen = function (url, title, className) {
 
 // Loads or unloads a screen's display page.
 const setScreenLive = function (screen, live) {
+  live = live && !screen.dataset.external;
   let frame = screen.querySelector("iframe");
   if (live && !frame) {
     frame = el("iframe");
@@ -257,7 +316,7 @@ const setScreenLive = function (screen, live) {
     frame.addEventListener("load", function () {
       applySound(frame);
     });
-    frame.src = screen.dataset.url;
+    frame.src = displays[screen.dataset.key].Url;
     screen.appendChild(frame);
   } else if (!live && frame) {
     frame.remove();
@@ -303,16 +362,72 @@ const buildScoringTable = function () {
   resetLight.title = "fieldResetLight";
   lights.fieldResetLight = resetLight;
   place(resetLight, -190, 120, tableZ);
+
+  // The FTA's field monitor and the announcer's display sit on the table facing the crew behind it, and the A/V cart
+  // next to the table has the stream monitor and a spare display waiting to be assigned.
+  const tableTop = 90;
+  const facingCrew = "rotateY(180deg)";
+  placeStandDisplay("fta-field-monitor", TABLE_MONITOR_WIDTH, -95, tableTop, tableZ + 10, facingCrew, 12);
+  placeStandDisplay("announcer", TABLE_MONITOR_WIDTH, 70, tableTop, tableZ + 10, facingCrew, 12);
+  const cartX = -(460 / 2 + 150);
+  place(box("scoring-table", 200, tableTop, 80), cartX, tableTop / 2, tableZ);
+  placeStandDisplay("twitch", TABLE_MONITOR_WIDTH, cartX - 48, tableTop, tableZ + 10, facingCrew, 12);
+  placeStandDisplay("spare", TABLE_MONITOR_WIDTH, cartX + 48, tableTop, tableZ + 10, facingCrew, 12);
 };
 
-// Builds the big audience screen behind the scoring table.
-const buildAudienceScreen = function () {
-  const z = -(FIELD_WIDTH / 2 + 330);
-  const y = 430;
-  place(panel("screen-truss", SCREEN_WIDTH + 30, SCREEN_WIDTH * 0.5625 + 30), 0, y, z - 3);
-  place(buildScreen(AUDIENCE_URL, "Audience display", "big-screen"), 0, y, z, "scale(" + SCREEN_WIDTH / DISPLAY_WIDTH_PX + ")");
+// Builds a screen on a truss with legs, as for the big screens behind the scoring table.
+const buildTrussScreen = function (key, width, x, y, z, rotation) {
+  if (!displays[key]) {
+    return;
+  }
+  const height = width * (DISPLAY_HEIGHT_PX / DISPLAY_WIDTH_PX);
+  const legHeight = y - height / 2 + 30;
+  rotation = rotation || "";
+  place(panel("screen-truss", width + 30, height + 30), x, y, z, rotation + " translateZ(-3px)");
+  placeDisplay(key, "big-screen", width, x, y, z, rotation);
   [-1, 1].forEach(function (side) {
-    place(panel("screen-leg", 8, y - 150), side * (SCREEN_WIDTH / 2 - 40), (y - 150) / 2, z - 3);
+    place(
+      panel("screen-leg", 8, legHeight),
+      x,
+      legHeight / 2,
+      z,
+      rotation + " translateX(" + side * (width / 2 - 40) + "px) translateZ(-3px)"
+    );
+  });
+};
+
+// Builds the big audience screen behind the scoring table, flanked by the wall display and the bracket.
+const buildAudienceScreen = function () {
+  const z = -(FIELD_WIDTH / 2 + 560);
+  buildTrussScreen("audience", SCREEN_WIDTH, 0, 430, z);
+  const sideX = SCREEN_WIDTH / 2 + SIDE_SCREEN_WIDTH / 2 + 60;
+  buildTrussScreen("wall", SIDE_SCREEN_WIDTH, -sideX, 380, z + 40, "rotateY(20deg)");
+  buildTrussScreen("bracket", SIDE_SCREEN_WIDTH, sideX, 380, z + 40, "rotateY(-20deg)");
+};
+
+// Builds the screens on the audience side of the field, facing the field: the queueing and rankings displays where
+// teams line up at the red end, and the logo and web page displays at the blue end. Any other display the server
+// lists goes on a stand between them.
+const buildAudienceSideScreens = function () {
+  const z = FIELD_WIDTH / 2 + 420;
+  const facingField = "rotateY(180deg)";
+  const spacing = STAND_SCREEN_WIDTH + 40;
+  const standX = 470;
+  const floor = panel("venue-floor", 2 * standX + 400, 260);
+  // Turned to read from the field, which puts the first label at the blue end.
+  floor.appendChild(el("span", "", "Audience"));
+  floor.appendChild(el("span", "", "Queueing"));
+  place(floor, 0, 0, z - 60, "rotateX(90deg) rotateZ(180deg)");
+  placeStandDisplay("queueing", STAND_SCREEN_WIDTH, -standX, 0, z, facingField, 110);
+  placeStandDisplay("rankings", STAND_SCREEN_WIDTH, -standX + spacing, 0, z, facingField, 110);
+  placeStandDisplay("webpage", STAND_SCREEN_WIDTH, standX - spacing, 0, z, facingField, 110);
+  placeStandDisplay("logo", STAND_SCREEN_WIDTH, standX, 0, z, facingField, 110);
+  const unplaced = simConfig.Displays.filter(function (display) {
+    return !placedDisplays[display.Key];
+  });
+  unplaced.forEach(function (display, index) {
+    const x = (index - (unplaced.length - 1) / 2) * spacing;
+    placeStandDisplay(display.Key, STAND_SCREEN_WIDTH, x, 0, z, facingField, 110);
   });
 };
 
@@ -332,14 +447,19 @@ const buildHubs = function () {
   });
 };
 
-// Camera handling.
+// Camera handling. The view is pushed back from the screen plane by the default distance times the zoom, and the eye
+// sits PERSPECTIVE_PX in front of that plane, so the eye's distance from the target is that sum.
 const defaultDistance = function () {
   const width = viewport.clientWidth || 1200;
   return Math.max(250, PERSPECTIVE_PX * (2000 / (0.92 * width)) - PERSPECTIVE_PX);
 };
 
+const eyeDistance = function () {
+  return Math.max(MIN_EYE_DISTANCE, defaultDistance() * camera.zoom + PERSPECTIVE_PX);
+};
+
 const applyCamera = function () {
-  const distance = defaultDistance() * camera.zoom;
+  const distance = eyeDistance() - PERSPECTIVE_PX;
   world.style.transform =
     "translateZ(" + -distance + "px) rotateX(" + camera.tilt + "deg) rotateY(" + camera.yaw + "deg) " +
     at(-camera.target[0], -camera.target[1], -camera.target[2]);
@@ -351,7 +471,10 @@ const applyCamera = function () {
 
 const setCamera = function (preset, animate) {
   const yaw = camera ? preset.yaw + 360 * Math.round((camera.yaw - preset.yaw) / 360) : preset.yaw;
-  camera = { yaw: yaw, tilt: preset.tilt, target: preset.target.slice(), zoom: preset.zoom };
+  // A preset with an eye distance (in cm) puts the camera that close whatever the window size, for views in tight
+  // spaces.
+  const zoom = preset.distance ? (preset.distance - PERSPECTIVE_PX) / defaultDistance() : preset.zoom;
+  camera = { yaw: yaw, tilt: preset.tilt, target: preset.target.slice(), zoom: zoom };
   world.classList.toggle("animating", animate !== false);
   applyCamera();
 };
@@ -370,7 +493,7 @@ const savedCamera = function () {
       yaw: saved.yaw,
       tilt: Math.max(-89, Math.min(-2, saved.tilt)),
       target: saved.target,
-      zoom: Math.max(0.15, Math.min(3, saved.zoom)),
+      zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, saved.zoom)),
     };
   }
   return null;
@@ -403,7 +526,7 @@ const bindCamera = function () {
     drag.y = event.clientY;
     if (drag.pan) {
       // Pan along the floor relative to the current view direction.
-      const scale = (defaultDistance() * camera.zoom + PERSPECTIVE_PX) / PERSPECTIVE_PX;
+      const scale = eyeDistance() / PERSPECTIVE_PX;
       const yawRad = (camera.yaw * Math.PI) / 180;
       camera.target[0] -= (dx * Math.cos(yawRad) - dy * Math.sin(yawRad)) * scale;
       camera.target[2] -= (dx * Math.sin(yawRad) + dy * Math.cos(yawRad)) * scale;
@@ -432,7 +555,12 @@ const bindCamera = function () {
     function (event) {
       event.preventDefault();
       world.classList.remove("animating");
-      camera.zoom = Math.max(0.15, Math.min(3, camera.zoom * Math.exp(event.deltaY * 0.0012)));
+      // Zoom by moving the eye, so that it can get close to things.
+      const eye = Math.min(
+        defaultDistance() * MAX_ZOOM + PERSPECTIVE_PX,
+        Math.max(MIN_EYE_DISTANCE, eyeDistance() * Math.exp(event.deltaY * 0.0012))
+      );
+      camera.zoom = (eye - PERSPECTIVE_PX) / defaultDistance();
       applyCamera();
     },
     { passive: false }
@@ -463,7 +591,7 @@ const activate = function (target) {
   }
   switch (element.dataset.action) {
     case "screen":
-      openScreen(element.dataset.url, element.dataset.title);
+      openScreen(element.dataset.key);
       break;
     case "hub":
       setCamera(
@@ -509,8 +637,12 @@ const setRobotState = function (stationId, state) {
   connection.send("setRobotState", { Station: stationId, State: state });
 };
 
-// Shows a display large in an overlay (a second connection to the same display).
-const openScreen = function (url, title) {
+// Shows the display with the given key large in an overlay (a second connection to the same display).
+const openScreen = function (key) {
+  const display = displays[key];
+  if (!display) {
+    return;
+  }
   const overlay = document.getElementById("screenOverlay");
   const holder = document.getElementById("screenOverlayFrame");
   holder.textContent = "";
@@ -518,9 +650,12 @@ const openScreen = function (url, title) {
   frame.addEventListener("load", function () {
     applySound(frame);
   });
-  frame.src = url;
+  frame.src = display.Url;
   holder.appendChild(frame);
-  setText(document.getElementById("screenOverlayTitle"), title);
+  setText(
+    document.getElementById("screenOverlayTitle"),
+    display.Title + " · " + display.Type + " display · " + display.Location
+  );
   overlay.hidden = false;
   fitOverlay();
 };
@@ -587,7 +722,7 @@ const buildStationTable = function () {
     view.type = "button";
     view.title = "Open " + stationId + "'s alliance station display";
     view.addEventListener("click", function () {
-      openScreen(stationUrl(stationId), "Alliance station display " + stationId);
+      openScreen("station-" + stationId);
     });
     [eStop, aStop, view].forEach(function (node) {
       top.appendChild(node);
@@ -666,7 +801,40 @@ const buildStationTable = function () {
     connection.send("setFieldEStop", !status.FieldEStopPressed);
   });
   document.getElementById("viewAudience").addEventListener("click", function () {
-    openScreen(AUDIENCE_URL, "Audience display");
+    openScreen("audience");
+  });
+};
+
+// Lists every display around the field, grouped by where it is, with a button to enlarge it.
+const buildDisplayList = function () {
+  const list = document.getElementById("displayList");
+  const locations = [];
+  simConfig.Displays.forEach(function (display) {
+    if (locations.indexOf(display.Location) < 0) {
+      locations.push(display.Location);
+    }
+  });
+  locations.forEach(function (location) {
+    const group = el("div", "display-group");
+    group.appendChild(el("div", "display-location", location));
+    simConfig.Displays.forEach(function (display) {
+      if (display.Location !== location) {
+        return;
+      }
+      const row = el("div", "display-row");
+      row.appendChild(el("span", "display-title", display.Title));
+      const type = el("span", "display-type muted", display.Type + (display.External ? " (outside content)" : ""));
+      row.appendChild(type);
+      const view = el("button", "view-button", "View");
+      view.type = "button";
+      view.title = "Open the " + display.Title + " display large";
+      view.addEventListener("click", function () {
+        openScreen(display.Key);
+      });
+      row.appendChild(view);
+      group.appendChild(row);
+    });
+    list.appendChild(group);
   });
 };
 
@@ -998,6 +1166,8 @@ $(function () {
   buildScoringTable();
   buildAudienceScreen();
   buildHubs();
+  buildAudienceSideScreens();
+  buildDisplayList();
   buildStationTable();
   buildCoilList();
   bindCamera();

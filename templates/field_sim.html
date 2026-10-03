@@ -76,6 +76,11 @@ scoring table stack light, and the audience screen), driven by the same code as 
           </div>
           <div id="robotBulk" class="robot-bulk"></div>
           <div id="stationTable" class="station-table"></div>
+          <div class="card-head drawer-subhead">
+            <h2>Displays</h2>
+            <span class="muted small">one of every display type, where it would be</span>
+          </div>
+          <div id="displayList" class="display-list"></div>
         </div>
       </section>
     </div>
@@ -88,7 +93,12 @@ scoring table stack light, and the audience screen), driven by the same code as 
       <div class="help-body">
         <p>Everything here comes from the running Cheesy Arena code: the hub lights are the LED controller's own pixels,
           the signs show what the sign code would send, the stack light and hub motors/lights are the PLC outputs, and the
-          screens are the real alliance station and audience displays.</p>
+          screens are the real displays: one of every kind, configured the way it would be where it sits around the field
+          (alliance station and drivers' field monitors on the walls, the FTA monitor and announcer display on the scoring
+          table, the stream monitor and an unassigned spare on the A/V cart, the audience, wall, and bracket screens
+          behind the table, and the queueing, rankings, web page, and logo displays on the audience side). They show up in
+          Setup &gt; Displays as 'Field Sim ...', and reconfiguring one there (for example the spare) changes it here
+          too. The stream and web page displays load outside content, so they only load when you click them.</p>
         <p>With no field PLC configured, a simulated PLC stands in so that the arena's PLC logic runs; its stop buttons
           and hub fuel sensors are the buttons here. Simulated robots connect over the same network protocol as a real
           Driver Station, as whichever teams are in the loaded match.</p>
@@ -101,7 +111,7 @@ scoring table stack light, and the audience screen), driven by the same code as 
         </ol>
         <h3>Keys</h3>
         <ul class="help-keys">
-          <li><kbd>1</kbd>&ndash;<kbd>8</kbd> camera views</li>
+          <li><kbd>1</kbd>&ndash;<kbd>9</kbd> camera views</li>
           <li><kbd>&rarr;</kbd> skip 5 s</li>
           <li><kbd>N</kbd> skip to the next LED change</li>
           <li><kbd>H</kbd> hide or show the panel</li>

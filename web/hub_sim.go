@@ -63,6 +63,7 @@ func (web *Web) renderSimPage(w http.ResponseWriter, r *http.Request, templateNa
 			CoilNames        []string
 			RobotStates      map[dssim.RobotState]string
 			NetworkSecurity  bool
+			Displays         []field.FieldSimDisplay
 		}{
 			alliance,
 			web.arena.SimControlsEnabled,
@@ -74,6 +75,7 @@ func (web *Web) renderSimPage(w http.ResponseWriter, r *http.Request, templateNa
 			web.arena.Plc.GetCoilNames(),
 			dssim.RobotStateNames,
 			web.arena.EventSettings.NetworkSecurityEnabled,
+			field.GetFieldSimDisplays(),
 		},
 	)
 	if err != nil {
