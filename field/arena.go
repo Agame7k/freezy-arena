@@ -7,6 +7,7 @@ package field
 
 import (
 	"fmt"
+	"github.com/Team254/cheesy-arena/dssim"
 	"github.com/Team254/cheesy-arena/game"
 	"github.com/Team254/cheesy-arena/led"
 	"github.com/Team254/cheesy-arena/model"
@@ -111,6 +112,11 @@ type Arena struct {
 	lastPlcNotifyTime                 time.Time
 	lastRedLedMode                    led.Mode
 	lastBlueLedMode                   led.Mode
+	SimControlsEnabled                bool
+	simMutex                          sync.Mutex
+	SimRobots                         *dssim.Manager
+	simTestTeams                      [6]int
+	hubSimAutoWinner                  string
 }
 
 type AllianceStation struct {
@@ -1269,9 +1275,16 @@ func (arena *Arena) handleAutoWinner() {
 	// Calculate auto winner and propagate the result.
 	redAutoFuel := arena.RedRealtimeScore.CurrentScore.Hub.GetShiftCount(game.ShiftAuto, true)
 	blueAutoFuel := arena.BlueRealtimeScore.CurrentScore.Hub.GetShiftCount(game.ShiftAuto, true)
-	if redAutoFuel == blueAutoFuel {
+	// The hub lighting simulator can force the winner of a test match (see SetHubSimAutoWinner).
+	simAutoWinner := arena.hubSimAutoWinnerOverride()
+	switch {
+	case simAutoWinner == "red":
+		arena.redWonAuto = true
+	case simAutoWinner == "blue":
+		arena.redWonAuto = false
+	case redAutoFuel == blueAutoFuel:
 		arena.redWonAuto = rand.Intn(2) == 1
-	} else {
+	default:
 		arena.redWonAuto = redAutoFuel > blueAutoFuel
 	}
 	arena.RedRealtimeScore.CurrentScore.Hub.WonAuto = arena.redWonAuto

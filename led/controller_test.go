@@ -42,6 +42,26 @@ func TestControllerSetAddressBlankDisables(t *testing.T) {
 	assert.Nil(t, controller.Update())
 }
 
+func TestControllerUpdateAdvancesPixelsWithoutAddress(t *testing.T) {
+	controller := NewController()
+	controller.SetMode(RedMode, BlueStartupMode)
+
+	assert.Nil(t, controller.Update())
+	redPixels, bluePixels := controller.GetPixels()
+	assert.Equal(t, Red, redPixels[0])
+	assert.Equal(t, Red, redPixels[numPixels-1])
+	assert.Equal(t, Black, bluePixels[0])
+
+	for i := 0; i < startupCycles; i++ {
+		assert.Nil(t, controller.Update())
+	}
+	_, bluePixels = controller.GetPixels()
+	for i := range bluePixels {
+		assert.Equal(t, Blue, bluePixels[i])
+	}
+	assert.Empty(t, controller.universes)
+}
+
 func TestControllerUpdateSendsSacnPackets(t *testing.T) {
 	conn := &fakeConn{}
 	controller := NewController()
@@ -178,4 +198,28 @@ func packetByUniverse(packets [][]byte, universe int) []byte {
 		}
 	}
 	return nil
+}
+
+func TestModeSwatch(t *testing.T) {
+	tests := []struct {
+		mode     Mode
+		base     Color
+		color    Color
+		animated bool
+	}{
+		{OffMode, Red, Black, false},
+		{RedMode, Red, Red, false},
+		{GreenMode, Blue, Green, false},
+		{RedPulseMode, Red, Red, true},
+		{BlueStartupMode, Blue, Blue, true},
+		{RainbowMode, Red, Color{}, true},
+		{Side2TestMode, Red, Color{63, 0, 0}, false},
+	}
+	for _, test := range tests {
+		color, animated := ModeSwatch(test.mode, test.base)
+		if test.mode != RainbowMode {
+			assert.Equal(t, test.color, color, ModeNames[test.mode])
+		}
+		assert.Equal(t, test.animated, animated, ModeNames[test.mode])
+	}
 }

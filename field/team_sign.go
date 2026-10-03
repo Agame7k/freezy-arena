@@ -82,6 +82,19 @@ func NewTeamSigns() *TeamSigns {
 
 // Updates the state of all signs with the latest data and sends packets to the signs if anything has changed.
 func (signs *TeamSigns) Update(arena *Arena) {
+	signs.forEachSign(
+		arena,
+		func(sign *TeamSign, station string, isRed bool, countdown, inMatchRearText string) {
+			sign.update(arena, station, isRed, countdown, inMatchRearText)
+		},
+	)
+}
+
+// forEachSign calls the given function for each sign with its station ("" for the timers), alliance, and the
+// countdown and in-match rear text it shares with the rest of its alliance.
+func (signs *TeamSigns) forEachSign(
+	arena *Arena, signFunc func(sign *TeamSign, station string, isRed bool, countdown, inMatchRearText string),
+) {
 	// Generate the countdown string which is used in multiple places.
 	matchTimeSec := int(arena.MatchTimeSec())
 	currentTime := time.Now()
@@ -114,14 +127,14 @@ func (signs *TeamSigns) Update(arena *Arena) {
 	blueInMatchTeamRearText := generateInMatchTeamRearText(arena, false, rearCountdown, currentTime)
 	blueInMatchTimerRearText := generateInMatchTimerRearText(arena, false, rearCountdown)
 
-	signs.Red1.update(arena, "R1", true, countdown, redInMatchTeamRearText)
-	signs.Red2.update(arena, "R2", true, countdown, redInMatchTeamRearText)
-	signs.Red3.update(arena, "R3", true, countdown, redInMatchTeamRearText)
-	signs.RedTimer.update(arena, "", true, countdown, redInMatchTimerRearText)
-	signs.Blue1.update(arena, "B1", false, countdown, blueInMatchTeamRearText)
-	signs.Blue2.update(arena, "B2", false, countdown, blueInMatchTeamRearText)
-	signs.Blue3.update(arena, "B3", false, countdown, blueInMatchTeamRearText)
-	signs.BlueTimer.update(arena, "", false, countdown, blueInMatchTimerRearText)
+	signFunc(&signs.Red1, "R1", true, countdown, redInMatchTeamRearText)
+	signFunc(&signs.Red2, "R2", true, countdown, redInMatchTeamRearText)
+	signFunc(&signs.Red3, "R3", true, countdown, redInMatchTeamRearText)
+	signFunc(&signs.RedTimer, "", true, countdown, redInMatchTimerRearText)
+	signFunc(&signs.Blue1, "B1", false, countdown, blueInMatchTeamRearText)
+	signFunc(&signs.Blue2, "B2", false, countdown, blueInMatchTeamRearText)
+	signFunc(&signs.Blue3, "B3", false, countdown, blueInMatchTeamRearText)
+	signFunc(&signs.BlueTimer, "", false, countdown, blueInMatchTimerRearText)
 }
 
 // Sets the team numbers for the next match on all signs.
@@ -178,17 +191,23 @@ func (sign *TeamSign) update(arena *Arena, station string, isRed bool, countdown
 		return
 	}
 
-	if sign.isTimer {
-		sign.frontText, sign.frontColor, sign.rearText = generateTimerTexts(arena, countdown, inMatchRearText)
-	} else {
-		sign.frontText, sign.frontColor, sign.rearText = sign.generateTeamNumberTexts(
-			arena, station, isRed, countdown, inMatchRearText,
-		)
-	}
+	sign.frontText, sign.frontColor, sign.rearText = sign.generateTexts(
+		arena, station, isRed, countdown, inMatchRearText,
+	)
 
 	if err := sign.sendPacket(); err != nil {
 		log.Printf("Failed to send team sign packet: %v", err)
 	}
+}
+
+// Returns the front text, front color, and rear text that the sign should show.
+func (sign *TeamSign) generateTexts(
+	arena *Arena, station string, isRed bool, countdown, inMatchRearText string,
+) (string, color.RGBA, string) {
+	if sign.isTimer {
+		return generateTimerTexts(arena, countdown, inMatchRearText)
+	}
+	return sign.generateTeamNumberTexts(arena, station, isRed, countdown, inMatchRearText)
 }
 
 // Returns the in-match rear text for the team number display that is common to the whole given alliance.
@@ -398,7 +417,8 @@ func (sign *TeamSign) generateTeamNumberTexts(
 	}
 
 	var rearText string
-	if arena.MatchState == PostMatch && sign.nextMatchTeamId > 0 && sign.nextMatchTeamId != allianceStation.Team.Id {
+	if arena.MatchState == PostMatch && sign.nextMatchTeamId > 0 &&
+		(allianceStation.Team == nil || sign.nextMatchTeamId != allianceStation.Team.Id) {
 		// Show the next match team number on the rear display before the score is committed so that queueing teams know
 		// where to go.
 		rearText = fmt.Sprintf("Next Team Up: %d", sign.nextMatchTeamId)

@@ -32,6 +32,16 @@ type fixture struct {
 	startAddress int
 }
 
+// SideNames lists which way each Hub side faces, in zone pixel order. Each side's pixels are its fixtures in
+// FixtureNames order, PixelsPerFixture pixels each.
+var SideNames = [numSides]string{"Driver Station", "Audience", "Center", "Scoring Table"}
+
+// FixtureNames lists the fixtures on each Hub side, in zone pixel order (see defaultFixtureLayout).
+var FixtureNames = [fixturesPerSide]string{"Bottom", "Top"}
+
+// PixelsPerFixture is the number of pixels in each fixture.
+const PixelsPerFixture = pixelsPerFixture
+
 type fixtureLayout struct {
 	red  []fixture
 	blue []fixture

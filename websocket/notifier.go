@@ -67,7 +67,8 @@ func (notifier *Notifier) notifyListener(listener chan messageEnvelope, message 
 			return
 		}
 		// only log blocked‐listener warnings for non‐stationTrip topics
-		log.Printf("Failed to send a '%s' notification due to blocked listener.", notifier.messageType)
+		log.Printf("Failed to send a '%s' notification due to blocked listener at %s.",
+			notifier.messageType, notifier.listeners[listener])
 	}
 }
 

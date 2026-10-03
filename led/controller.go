@@ -8,6 +8,7 @@ package led
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,7 @@ type Controller struct {
 	fixtures  fixtureLayout
 	universes map[int]*universe
 	packet    []byte
+	mutex     sync.Mutex
 }
 
 type universe struct {
@@ -48,6 +50,8 @@ func NewController() *Controller {
 
 // SetAddress sets the controller address, or disables output if the address is blank.
 func (controller *Controller) SetAddress(address string) error {
+	controller.mutex.Lock()
+	defer controller.mutex.Unlock()
 	if controller.conn != nil {
 		_ = controller.conn.Close()
 		controller.conn = nil
@@ -66,6 +70,8 @@ func (controller *Controller) SetAddress(address string) error {
 // SetMode sets the current LED sequence mode and resets the intra-sequence counter to the beginning if the new mode
 // is different from the current mode.
 func (controller *Controller) SetMode(redMode, blueMode Mode) {
+	controller.mutex.Lock()
+	defer controller.mutex.Unlock()
 	if redMode != controller.redZone.currentMode {
 		controller.redZone.currentMode = redMode
 		controller.redZone.counter = 0
@@ -78,24 +84,32 @@ func (controller *Controller) SetMode(redMode, blueMode Mode) {
 
 // GetModes returns the current mode for each alliance side.
 func (controller *Controller) GetModes() (Mode, Mode) {
+	controller.mutex.Lock()
+	defer controller.mutex.Unlock()
 	return controller.redZone.currentMode, controller.blueZone.currentMode
 }
 
 // GetPixels returns the current RGB color arrays for the red and blue zones.
 func (controller *Controller) GetPixels() ([64]Color, [64]Color) {
+	controller.mutex.Lock()
+	defer controller.mutex.Unlock()
 	return controller.redZone.pixels, controller.blueZone.pixels
 }
 
 // Update advances the pixel values through the current sequence and sends a packet if necessary. Should be called from
-// a timed loop.
+// a timed loop. The pixels are advanced even when no controller is configured so that the Field Testing page and the
+// hub lighting simulator can show what the lights would be doing.
 func (controller *Controller) Update() error {
-	if controller.conn == nil {
-		// This controller is not configured; do nothing.
-		return nil
-	}
+	controller.mutex.Lock()
+	defer controller.mutex.Unlock()
 
 	controller.redZone.updatePixels(Red)
 	controller.blueZone.updatePixels(Blue)
+
+	if controller.conn == nil {
+		// This controller is not configured; don't send anything.
+		return nil
+	}
 
 	// Create the template packet if it doesn't already exist.
 	if len(controller.packet) == 0 {

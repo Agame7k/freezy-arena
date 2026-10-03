@@ -75,12 +75,25 @@ func (arena *Arena) updateTeleopHubLeds(currentTime time.Time) {
 		arena.MatchStartTime, currentTime,
 	)
 
+	redMode, blueMode := teleopHubLedModes(shift, remaining, redRemaining > 0, blueRemaining > 0, arena.redWonAuto)
+	arena.Leds.SetMode(redMode, blueMode)
+	currentRed, currentBlue := arena.Leds.GetModes()
+	if currentRed != arena.lastRedLedMode || currentBlue != arena.lastBlueLedMode {
+		arena.LedChangeNotifier.Notify()
+	}
+}
+
+// teleopHubLedModes returns the red and blue Hub LED modes for the given teleop shift, the time remaining in it, which
+// Hubs are active, and which alliance won auto.
+func teleopHubLedModes(
+	shift game.Shift, remaining time.Duration, redActive, blueActive, redWonAuto bool,
+) (led.Mode, led.Mode) {
 	redMode := led.OffMode
-	if redRemaining > 0 {
+	if redActive {
 		redMode = led.RedMode
 	}
 	blueMode := led.OffMode
-	if blueRemaining > 0 {
+	if blueActive {
 		blueMode = led.BlueMode
 	}
 
@@ -88,19 +101,19 @@ func (arena *Arena) updateTeleopHubLeds(currentTime time.Time) {
 	if remaining <= time.Duration(hubLightWarningSec)*time.Second {
 		switch shift {
 		case game.ShiftTransition:
-			if arena.redWonAuto {
+			if redWonAuto {
 				redMode = led.RedPulseMode
 			} else {
 				blueMode = led.BluePulseMode
 			}
 		case game.Shift1, game.Shift3:
-			if arena.redWonAuto {
+			if redWonAuto {
 				blueMode = led.BluePulseMode
 			} else {
 				redMode = led.RedPulseMode
 			}
 		case game.Shift2:
-			if arena.redWonAuto {
+			if redWonAuto {
 				redMode = led.RedPulseMode
 			} else {
 				blueMode = led.BluePulseMode
@@ -111,15 +124,11 @@ func (arena *Arena) updateTeleopHubLeds(currentTime time.Time) {
 		default:
 		}
 	} else if shift == game.ShiftTransition {
-		if arena.redWonAuto {
+		if redWonAuto {
 			redMode = led.RedAdvantageMode
 		} else {
 			blueMode = led.BlueAdvantageMode
 		}
 	}
-	arena.Leds.SetMode(redMode, blueMode)
-	currentRed, currentBlue := arena.Leds.GetModes()
-	if currentRed != arena.lastRedLedMode || currentBlue != arena.lastBlueLedMode {
-		arena.LedChangeNotifier.Notify()
-	}
+	return redMode, blueMode
 }

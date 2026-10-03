@@ -1,0 +1,133 @@
+{{/*
+Copyright 2026 Team 254. All Rights Reserved.
+
+Field simulator: a 3D view of the whole field (Hubs, driver stations with their displays, signs, and simulated robots,
+scoring table stack light, and the audience screen), driven by the same code as the real hardware.
+*/}}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Field Simulator - {{.EventSettings.Name}}</title>
+    <link rel="shortcut icon" href="/static/img/favicon.ico">
+    <link rel="stylesheet" href="/static/css/hub_sim.css"/>
+    <link rel="stylesheet" href="/static/css/field_sim.css"/>
+  </head>
+  <body data-alliance="both" class="field-sim">
+    <header class="sim-header field-header">
+      <div class="sim-title">
+        <span class="sim-title-chip"></span>
+        <span>Field Simulator</span>
+        <span id="matchName" class="sim-subtitle"></span>
+      </div>
+      <div id="hubChips" class="hub-chips"></div>
+      <div class="sim-match">
+        <span id="matchStateText" class="sim-match-state">-</span>
+        <span id="matchClock" class="sim-match-clock">-:--</span>
+      </div>
+      <div class="header-buttons">
+        <button type="button" id="soundToggle" class="btn btn-small" title="Play the match sounds from the audience display"></button>
+        <button type="button" id="displaysToggle" class="btn btn-small" title="Show the real displays on the field's screens (turn off to save CPU)"></button>
+        <button type="button" id="drawerToggle" class="btn btn-small">Hide panel (H)</button>
+        <button type="button" id="helpToggle" class="btn btn-small" title="Controls and what's shown (?)">Help</button>
+      </div>
+      <div id="connStatus" class="sim-conn" data-state="waiting">Connecting</div>
+    </header>
+
+    <div class="field-main">
+      <div id="viewport" class="field-viewport">
+        <div id="world" class="field-world"></div>
+        <div class="camera-buttons viewport-overlay" id="cameraButtons"></div>
+        <div class="quick-controls viewport-overlay" id="quickControls"></div>
+        <div class="viewport-hint">Drag to orbit &middot; right-drag to pan &middot; scroll to zoom &middot; click a screen, hub, or stop button</div>
+      </div>
+
+      <section id="drawer" class="field-drawer">
+        <div class="drawer-column drawer-wide">
+          <div class="card-head">
+            <h2>Match timeline</h2>
+            <button type="button" id="timelineWinner" class="link-button" title="Before teleop, the shifts depend on who wins auto. Click to preview the other outcome."></button>
+          </div>
+          <div class="timeline">
+            <div id="timelineShifts" class="timeline-shifts"></div>
+            <div id="timelineRows" class="timeline-rows"></div>
+            <div id="timelinePlayhead" class="timeline-playhead" hidden></div>
+          </div>
+          <div id="timelineLegend" class="timeline-legend"></div>
+          <div class="card-head drawer-subhead">
+            <h2>Simulator controls</h2>
+          </div>
+          <div id="controlsBody" class="controls"></div>
+          <div class="card-head drawer-subhead">
+            <h2>PLC outputs</h2>
+            <span id="plcSummary" class="muted small"></span>
+          </div>
+          <div id="coilList" class="coil-list"></div>
+          <div id="startConditions" class="start-conditions"></div>
+        </div>
+        <div class="drawer-column">
+          <div class="card-head">
+            <h2>Driver stations &amp; robots</h2>
+            <div class="card-head-buttons">
+              <button type="button" id="viewAudience" class="view-button" title="Open the audience display">Audience display</button>
+              <button type="button" id="fieldEStop" class="estop-button field-estop">Field E-stop</button>
+            </div>
+          </div>
+          <div id="robotBulk" class="robot-bulk"></div>
+          <div id="stationTable" class="station-table"></div>
+        </div>
+      </section>
+    </div>
+
+    <div id="helpPanel" class="help-panel" hidden>
+      <div class="help-head">
+        <h2>Field simulator</h2>
+        <button type="button" id="helpClose" class="btn btn-small">Close (Esc)</button>
+      </div>
+      <div class="help-body">
+        <p>Everything here comes from the running Cheesy Arena code: the hub lights are the LED controller's own pixels,
+          the signs show what the sign code would send, the stack light and hub motors/lights are the PLC outputs, and the
+          screens are the real alliance station and audience displays.</p>
+        <p>With no field PLC configured, a simulated PLC stands in so that the arena's PLC logic runs; its stop buttons
+          and hub fuel sensors are the buttons here. Simulated robots connect over the same network protocol as a real
+          Driver Station, as whichever teams are in the loaded match.</p>
+        <h3>Getting started</h3>
+        <ol>
+          <li>Press <b>Start test match</b> to run a match with no robots (every station is bypassed).</li>
+          <li>For robots: press <b>Use event teams</b>, then <b>All robots on</b>, then <b>Start test match</b>. Robots
+            that are linked get enabled by the arena; watch their signal lights blink.</li>
+          <li>Score fuel, press stop buttons, or skip ahead (or click ahead on the timeline) to see what changes.</li>
+        </ol>
+        <h3>Keys</h3>
+        <ul class="help-keys">
+          <li><kbd>1</kbd>&ndash;<kbd>8</kbd> camera views</li>
+          <li><kbd>&rarr;</kbd> skip 5 s</li>
+          <li><kbd>N</kbd> skip to the next LED change</li>
+          <li><kbd>H</kbd> hide or show the panel</li>
+          <li><kbd>Esc</kbd> close an enlarged screen</li>
+          <li><kbd>?</kbd> this help</li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="screenOverlay" class="screen-overlay" hidden>
+      <div class="screen-overlay-head">
+        <span id="screenOverlayTitle"></span>
+        <button type="button" id="screenOverlayClose" class="btn">Close (Esc)</button>
+      </div>
+      <div id="screenOverlayFrame" class="screen-overlay-frame"></div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script>var hubSimConfig = {{.Config}};</script>
+    <script src="/static/js/lib/jquery.min.js"></script>
+    <script src="/static/js/lib/jquery.json-2.4.min.js"></script>
+    <script src="/static/js/lib/jquery.websocket-0.0.1.js"></script>
+    <script src="/static/js/cheesy-websocket.js"></script>
+    <script src="/static/js/match_timing.js"></script>
+    <script src="/static/js/hub_sim_shared.js"></script>
+    <script src="/static/js/field_sim.js"></script>
+  </body>
+</html>
