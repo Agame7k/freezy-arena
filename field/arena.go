@@ -86,6 +86,7 @@ type Arena struct {
 	FieldVolunteers                   bool
 	FieldReset                        bool
 	AudienceDisplayMode               string
+	winnerLightsResetAt               time.Time
 	SavedMatch                        *model.Match
 	SavedMatchResult                  *model.MatchResult
 	SavedRankings                     game.Rankings
@@ -658,6 +659,17 @@ func (arena *Arena) currentMatchDisplayName() string {
 // Updates the audience display screen.
 func (arena *Arena) SetAudienceDisplayMode(mode string) {
 	if arena.AudienceDisplayMode != mode {
+		redWon, blueWon := false, false
+		if mode == "score" && arena.SavedMatch != nil {
+			redWon = arena.SavedMatch.Status == game.RedWonMatch || arena.SavedMatch.Status == game.TieMatch
+			blueWon = arena.SavedMatch.Status == game.BlueWonMatch || arena.SavedMatch.Status == game.TieMatch
+		}
+		arena.Plc.SetWinnerLights(redWon, blueWon)
+		arena.winnerLightsResetAt = time.Time{}
+		if redWon || blueWon {
+			arena.winnerLightsResetAt = time.Now().Add(10 * time.Second)
+		}
+
 		arena.AudienceDisplayMode = mode
 		arena.AudienceDisplayModeNotifier.Notify()
 		if mode == "score" {
@@ -703,6 +715,11 @@ func (arena *Arena) Update() {
 	sendDsPacket := false
 	matchTimeSec := arena.MatchTimeSec()
 	currentTime := time.Now()
+	// Reset the winner trigger coils; the PLC controls the light sequence independently.
+	if !arena.winnerLightsResetAt.IsZero() && !currentTime.Before(arena.winnerLightsResetAt) {
+		arena.Plc.SetWinnerLights(false, false)
+		arena.winnerLightsResetAt = time.Time{}
+	}
 	switch arena.MatchState {
 	case PreMatch:
 		auto = true

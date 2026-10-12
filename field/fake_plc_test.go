@@ -30,6 +30,7 @@ type FakePlc struct {
 	blueHubMotor          bool
 	redHubLight           bool
 	blueHubLight          bool
+	winnerLights          [2]bool
 }
 
 func (plc *FakePlc) SetAddress(address string) {
@@ -183,4 +184,7 @@ func (plc *FakePlc) SetRegisterValue(index int, value uint16) {
 }
 func (plc *FakePlc) ResetMatchReset() {
 	// Not needed for testing, just to satisfy the interface.a
+}
+func (plc *FakePlc) SetWinnerLights(red, blue bool) {
+	plc.winnerLights = [2]bool{red, blue}
 }
