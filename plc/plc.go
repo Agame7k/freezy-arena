@@ -152,6 +152,8 @@ const (
 	blueHubMotor
 	redHubLight
 	blueHubLight
+	redWins
+	blueWins
 	coilCount
 )
 

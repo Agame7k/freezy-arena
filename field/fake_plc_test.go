@@ -163,8 +163,8 @@ func (plc *FakePlc) ResetEstops() {
 }
 
 // Returns the value of all PLC coils.
-func (plc *FakePlc) GetAllCoils() [13]bool {
-	var coils [13]bool
+func (plc *FakePlc) GetAllCoils() [15]bool {
+	var coils [15]bool
 	return coils
 }
 

@@ -129,6 +129,8 @@ func TestPlcGetNames(t *testing.T) {
 			"blueHubMotor",
 			"redHubLight",
 			"blueHubLight",
+			"redWins",
+			"blueWins",
 		},
 		plc.GetCoilNames(),
 	)
