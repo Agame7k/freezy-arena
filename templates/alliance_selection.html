@@ -76,7 +76,8 @@ UI for controlling the alliance selection process.
           {{end}}
         </tbody>
       </table>
-      Press <kbd>Enter</kbd> after each pick is confirmed
+      Press <kbd>Enter</kbd> after each pick is confirmed. If an invited team declines, click <em>Decline</em> next
+      to it; it can no longer be picked but can still be promoted to captain.
       <div class="card card-body bg-body-secondary mt-4">
         <div class="row">
           <div class="col-lg-8">
@@ -120,12 +121,13 @@ UI for controlling the alliance selection process.
       </div>
     </form>
   </div>
-  <div class="col-lg-2">
+  <div class="col-lg-3">
     <table class="table table-striped table-hover">
       <thead>
         <tr>
           <th>Rank</th>
           <th>Team</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -133,7 +135,27 @@ UI for controlling the alliance selection process.
         {{if not $team.Picked}}
         <tr>
           <td>{{$team.Rank}}</td>
+          {{if $team.Declined}}
+          <td><s class="text-body-secondary">{{$team.TeamId}}</s>
+            <span class="badge bg-secondary" title="Can only be promoted to captain">Declined</span></td>
+          {{else}}
           <td>{{$team.TeamId}}</td>
+          {{end}}
+          <td class="text-end">
+            <form action="/alliance_selection/decline" method="POST">
+              <input type="hidden" name="teamId" value="{{$team.TeamId}}"/>
+              {{if $team.Declined}}
+              <input type="hidden" name="declined" value="false"/>
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Undo</button>
+              {{else}}
+              <input type="hidden" name="declined" value="true"/>
+              <button type="submit" class="btn btn-sm btn-outline-danger"
+                title="Team declined an invitation; it can no longer be picked but may still become a captain">
+                Decline
+              </button>
+              {{end}}
+            </form>
+          </td>
         </tr>
         {{end}}
         {{end}}

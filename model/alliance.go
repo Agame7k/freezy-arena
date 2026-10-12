@@ -14,9 +14,10 @@ type Alliance struct {
 }
 
 type AllianceSelectionRankedTeam struct {
-	Rank   int
-	TeamId int
-	Picked bool
+	Rank     int
+	TeamId   int
+	Picked   bool
+	Declined bool
 }
 
 func (database *Database) CreateAlliance(alliance *Alliance) error {

@@ -131,6 +131,7 @@ func (web *Web) newHandler() http.Handler {
 	mux.HandleFunc("GET /alliance_selection", web.allianceSelectionGetHandler)
 	mux.HandleFunc("POST /alliance_selection", web.allianceSelectionPostHandler)
 	mux.HandleFunc("GET /alliance_selection/websocket", web.allianceSelectionWebsocketHandler)
+	mux.HandleFunc("POST /alliance_selection/decline", web.allianceSelectionDeclineHandler)
 	mux.HandleFunc("POST /alliance_selection/finalize", web.allianceSelectionFinalizeHandler)
 	mux.HandleFunc("POST /alliance_selection/reset", web.allianceSelectionResetHandler)
 	mux.HandleFunc("POST /alliance_selection/start", web.allianceSelectionStartHandler)

@@ -166,6 +166,64 @@ func TestAllianceSelectionErrors(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), "already been finalized")
 }
 
+func TestAllianceSelectionDecline(t *testing.T) {
+	web := setupTestWeb(t)
+
+	web.arena.EventSettings.PlayoffType = model.SingleEliminationPlayoff
+	web.arena.EventSettings.NumPlayoffAlliances = 2
+	for i := 1; i <= 8; i++ {
+		web.arena.Database.CreateRanking(&game.Ranking{TeamId: 100 + i, Rank: i})
+	}
+	recorder := web.postHttpResponse("/alliance_selection/start", "")
+	assert.Equal(t, 303, recorder.Code)
+
+	// Team 102 declines an invitation from alliance 1.
+	recorder = web.postHttpResponse("/alliance_selection", "selection0_0=101")
+	assert.Equal(t, 303, recorder.Code)
+	recorder = web.postHttpResponse("/alliance_selection/decline", "teamId=102&declined=true")
+	assert.Equal(t, 303, recorder.Code)
+	assert.True(t, web.arena.AllianceSelectionRankedTeams[1].Declined)
+	recorder = web.getHttpResponse("/alliance_selection")
+	assert.Contains(t, recorder.Body.String(), "Declined")
+
+	// The declined team can't be picked.
+	recorder = web.postHttpResponse("/alliance_selection", "selection0_0=101&selection0_1=102")
+	assert.Equal(t, 200, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "declined an invitation")
+	assert.Equal(t, 0, web.arena.AllianceSelectionAlliances[0].TeamIds[1])
+
+	// The declined team can still be promoted to captain.
+	recorder = web.postHttpResponse("/alliance_selection", "selection0_0=101&selection0_1=103&selection1_0=102")
+	assert.Equal(t, 303, recorder.Code)
+	assert.Equal(t, 102, web.arena.AllianceSelectionAlliances[1].TeamIds[0])
+	assert.True(t, web.arena.AllianceSelectionRankedTeams[1].Picked)
+	assert.True(t, web.arena.AllianceSelectionRankedTeams[1].Declined)
+
+	// A team already on an alliance can't decline.
+	recorder = web.postHttpResponse("/alliance_selection/decline", "teamId=103&declined=true")
+	assert.Equal(t, 200, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "already part of an alliance")
+
+	// Undoing a decline makes the team pickable again.
+	recorder = web.postHttpResponse("/alliance_selection/decline", "teamId=104&declined=true")
+	assert.Equal(t, 303, recorder.Code)
+	recorder = web.postHttpResponse("/alliance_selection/decline", "teamId=104&declined=false")
+	assert.Equal(t, 303, recorder.Code)
+	recorder = web.postHttpResponse(
+		"/alliance_selection", "selection0_0=101&selection0_1=103&selection1_0=102&selection1_1=104",
+	)
+	assert.Equal(t, 303, recorder.Code)
+	assert.Equal(t, 104, web.arena.AllianceSelectionAlliances[1].TeamIds[1])
+
+	// Invalid and unknown teams.
+	recorder = web.postHttpResponse("/alliance_selection/decline", "teamId=abc")
+	assert.Equal(t, 200, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Invalid team number")
+	recorder = web.postHttpResponse("/alliance_selection/decline", "teamId=999")
+	assert.Equal(t, 200, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "not in the alliance selection rankings")
+}
+
 func TestAllianceSelectionReset(t *testing.T) {
 	web := setupTestWeb(t)
 

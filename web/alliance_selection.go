@@ -75,6 +75,20 @@ func (web *Web) allianceSelectionPostHandler(w http.ResponseWriter, r *http.Requ
 							)
 							return
 						}
+						if team.Declined && j > 0 {
+							// A team that declined an invitation can no longer be picked, but it may still be promoted
+							// to alliance captain.
+							web.renderAllianceSelection(
+								w,
+								r,
+								fmt.Sprintf(
+									"Team %d declined an invitation and can no longer be picked; it may only be "+
+										"promoted to captain.",
+									teamId,
+								),
+							)
+							return
+						}
 						found = true
 						web.arena.AllianceSelectionRankedTeams[k].Picked = true
 						web.arena.AllianceSelectionAlliances[i].TeamIds[j] = teamId
@@ -97,6 +111,43 @@ func (web *Web) allianceSelectionPostHandler(w http.ResponseWriter, r *http.Requ
 
 	web.arena.AllianceSelectionNotifier.Notify()
 	http.Redirect(w, r, "/alliance_selection", 303)
+}
+
+// Marks or unmarks a team as having declined an invitation to join an alliance.
+func (web *Web) allianceSelectionDeclineHandler(w http.ResponseWriter, r *http.Request) {
+	if !web.userIsAdmin(w, r) {
+		return
+	}
+
+	if !web.canModifyAllianceSelection() {
+		web.renderAllianceSelection(w, r, "Alliance selection has already been finalized.")
+		return
+	}
+
+	teamString := r.PostFormValue("teamId")
+	teamId, err := strconv.Atoi(teamString)
+	if err != nil {
+		web.renderAllianceSelection(w, r, fmt.Sprintf("Invalid team number value '%s'.", teamString))
+		return
+	}
+	declined := r.PostFormValue("declined") != "false"
+
+	for i, team := range web.arena.AllianceSelectionRankedTeams {
+		if team.TeamId == teamId {
+			if declined && team.Picked {
+				web.renderAllianceSelection(
+					w, r, fmt.Sprintf("Team %d is already part of an alliance and can't decline.", teamId),
+				)
+				return
+			}
+			web.arena.AllianceSelectionRankedTeams[i].Declined = declined
+			web.arena.AllianceSelectionNotifier.Notify()
+			http.Redirect(w, r, "/alliance_selection", 303)
+			return
+		}
+	}
+
+	web.renderAllianceSelection(w, r, fmt.Sprintf("Team %d is not in the alliance selection rankings.", teamId))
 }
 
 // Sets up the empty alliances and populates the ranked team list.

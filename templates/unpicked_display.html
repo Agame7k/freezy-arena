@@ -22,7 +22,7 @@ Display showing only the unpicked teams during alliance selection.
     
     <script id="unpickedTeamsTemplate" type="text/x-handlebars-template">
       {{"{{#each this}}"}}
-      <div class="unpicked">
+      <div class="unpicked{{"{{#if Declined}}"}} declined{{"{{/if}}"}}">
         <div class="unpicked-rank">{{"{{Rank}}"}}.</div>
         <div class="unpicked-team">{{"{{TeamId}}"}}</div>
       </div>

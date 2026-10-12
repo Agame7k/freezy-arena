@@ -77,3 +77,8 @@ html, body {
   width: 3em;
   text-align: left;
 }
+
+.unpicked.declined {
+  opacity: 0.35;
+  text-decoration: line-through;
+}

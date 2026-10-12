@@ -270,7 +270,8 @@ const handleAllianceSelection = function (data) {
     let text = "";
     $.each(rankedTeams, function (i, v) {
       if (!v.Picked) {
-        text += `<div class="unpicked"><div class="unpicked-rank">${v.Rank}.</div>` +
+        const declinedClass = v.Declined ? " declined" : "";
+        text += `<div class="unpicked${declinedClass}"><div class="unpicked-rank">${v.Rank}.</div>` +
           `<div class="unpicked-team">${v.TeamId}</div></div>`;
       }
     });
