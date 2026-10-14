@@ -271,8 +271,8 @@ const handleArenaStatus = function (data) {
       $("#scoreRadio").prop("disabled", false);
       $("#startMatch").prop("disabled", true);
       $("#abortMatch").prop("disabled", false);
-      $("#signalVolunteers").prop("disabled", true);
-      $("#signalReset").prop("disabled", true);
+      $("#signalVolunteers").prop("disabled", false);
+      $("#signalReset").prop("disabled", false);
       $("#fieldResetRadio").prop("disabled", false);
       $("#commitResults").prop("disabled", true);
       $("#discardResults").prop("disabled", true);
