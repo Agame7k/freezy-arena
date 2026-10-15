@@ -1359,10 +1359,11 @@ func (arena *Arena) handlePlcInputOutput() {
 
 		// Turn off lights if all teams become ready.
 		if redAllianceReady && blueAllianceReady {
-			arena.FieldVolunteers = false
-			arena.FieldReset = false
-			arena.Plc.SetFieldResetLight(false)
-			arena.Leds.SetMode(led.OffMode, led.OffMode)
+			if !arena.FieldVolunteers {
+				arena.FieldReset = false
+				arena.Plc.SetFieldResetLight(false)
+				arena.Leds.SetMode(led.OffMode, led.OffMode)
+			}
 			if arena.CurrentMatch.FieldReadyAt.IsZero() {
 				arena.CurrentMatch.FieldReadyAt = time.Now()
 			}
