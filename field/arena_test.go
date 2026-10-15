@@ -19,6 +19,44 @@ import (
 	"time"
 )
 
+func TestWinnerLightsReset(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		status game.MatchStatus
+		want   [2]bool
+	}{
+		{"red wins", game.RedWonMatch, [2]bool{true, false}},
+		{"blue wins", game.BlueWonMatch, [2]bool{false, true}},
+		{"tie", game.TieMatch, [2]bool{true, true}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			arena := setupTestArena(t)
+			fakePlc := &FakePlc{}
+			arena.Plc = fakePlc
+			arena.SavedMatch = &model.Match{Status: testCase.status}
+			before := time.Now()
+			arena.SetAudienceDisplayMode("score")
+			want := testCase.want
+			assert.Equal(t, want, fakePlc.winnerLights)
+			assert.False(t, arena.winnerLightsResetAt.Before(before.Add(10*time.Second)))
+			assert.False(t, arena.winnerLightsResetAt.After(time.Now().Add(10*time.Second)))
+			arena.Update()
+			assert.Equal(t, want, fakePlc.winnerLights)
+			arena.winnerLightsResetAt = time.Now().Add(-time.Second)
+			arena.Update()
+			assert.Equal(t, [2]bool{}, fakePlc.winnerLights)
+			assert.True(t, arena.winnerLightsResetAt.IsZero())
+
+			arena.SetAudienceDisplayMode("blank")
+			arena.SetAudienceDisplayMode("score")
+			assert.Equal(t, want, fakePlc.winnerLights)
+			arena.SetAudienceDisplayMode("blank")
+			assert.Equal(t, [2]bool{}, fakePlc.winnerLights)
+			assert.True(t, arena.winnerLightsResetAt.IsZero())
+		})
+	}
+}
+
 func TestAssignTeam(t *testing.T) {
 	arena := setupTestArena(t)
 

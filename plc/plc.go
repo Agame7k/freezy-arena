@@ -49,6 +49,7 @@ type Plc interface {
 	SetRegisterValue(index int, value uint16)
 	SetCoilValue(index int, value bool)
 	ResetMatchReset()
+	SetWinnerLights(bool, bool)
 }
 
 type ModbusPlc struct {
@@ -152,6 +153,8 @@ const (
 	blueHubMotor
 	redHubLight
 	blueHubLight
+	redWins
+	blueWins
 	coilCount
 )
 
@@ -618,4 +621,9 @@ func (plc *ModbusPlc) ResetMatchReset() {
 	} else {
 		plc.matchResetCycles++
 	}
+}
+
+func (plc *ModbusPlc) SetWinnerLights(red, blue bool) {
+	plc.coils[redWins] = red
+	plc.coils[blueWins] = blue
 }
