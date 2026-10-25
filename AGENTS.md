@@ -11,11 +11,10 @@ See `go.mod` for what version of Go to use.
    Runs the server; open `http://localhost:8080` in a browser.
 1. `go test ./...`
    Runs all Go tests across packages. Should be run after making any code changes to ensure nothing is broken.
-1. `go fmt ./...`
-   Formats all Go code in the repo. Should be run after making any code changes to ensure consistent style.
+**NEVER run `go fmt ./...` or any other repository-wide formatting command.** These commands rewrite unrelated files and line endings. Format only individual Go files intentionally changed for the task, and preserve their existing line endings.
 
 ## Coding Style & Naming Conventions
-Follow standard Go style: tabs for indentation, exported names in `CamelCase`, unexported in `camelCase`. Format code with `gofmt` before submitting changes. If you update a set of enum-style constants, run `go generate ./...` to refresh the generated enum string helpers. Keep package names short and domain-focused (matching existing directories like `field`, `game`, `partner`).
+Follow standard Go style: tabs for indentation, exported names in `CamelCase`, unexported in `camelCase`. Use `gofmt` only on individual Go files intentionally changed for the task, preserving their existing line endings. Never format the entire repository. If you update a set of enum-style constants, run `go generate ./...` to refresh the generated enum string helpers. Keep package names short and domain-focused (matching existing directories like `field`, `game`, `partner`).
 
 Order imports alphabetically without any grouping or empty lines between them or special treatment of standard library vs third-party imports. Update any files that don't adhere to this standard if editing them for other reasons. Don't use goimports.
 

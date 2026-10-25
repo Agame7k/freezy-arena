@@ -86,6 +86,7 @@ type Arena struct {
 	FieldVolunteers                   bool
 	FieldReset                        bool
 	AudienceDisplayMode               string
+	winnerLightsResetAt               time.Time
 	SavedMatch                        *model.Match
 	SavedMatchResult                  *model.MatchResult
 	SavedRankings                     game.Rankings
@@ -258,6 +259,7 @@ func (arena *Arena) LoadSettings() error {
 		arena.Esp32.SetRedAllianceStationEstopAddress("")
 		arena.Esp32.SetBlueAllianceStationEstopAddress("")
 	}
+	arena.Leds.SetUniverseMode(settings.LedUniverseMode)
 	arena.TbaClient = partner.NewTbaClient(settings.TbaEventCode, settings.TbaSecretId, settings.TbaSecret)
 	arena.NexusClient = partner.NewNexusClient(settings.TbaEventCode, settings.NexusAutoQueueKey)
 	arena.BlackmagicClient = partner.NewBlackmagicClient(settings.BlackmagicAddresses)
@@ -487,11 +489,6 @@ func (arena *Arena) LoadMatch(match *model.Match) error {
 	arena.Plc.SetFtaReady(false)
 	arena.NextFoulId = 1
 	arena.redWonAuto = false
-	arena.Leds.SetMode(led.OffMode, led.OffMode)
-	currentRed, currentBlue := arena.Leds.GetModes()
-	if currentRed != arena.lastRedLedMode || currentBlue != arena.lastBlueLedMode {
-		arena.LedChangeNotifier.Notify()
-	}
 
 	// Notify any listeners about the new match.
 	arena.MatchLoadNotifier.Notify()
@@ -499,7 +496,7 @@ func (arena *Arena) LoadMatch(match *model.Match) error {
 	arena.AllianceStationDisplayMode = "match"
 	arena.AllianceStationDisplayModeNotifier.Notify()
 	arena.ScoringStatusNotifier.Notify()
-	currentRed, currentBlue = arena.Leds.GetModes()
+	currentRed, currentBlue := arena.Leds.GetModes()
 	if currentRed != arena.lastRedLedMode || currentBlue != arena.lastBlueLedMode {
 		arena.LedChangeNotifier.Notify()
 	}
@@ -743,6 +740,17 @@ func (arena *Arena) currentMatchDisplayName() string {
 // Updates the audience display screen.
 func (arena *Arena) SetAudienceDisplayMode(mode string) {
 	if arena.AudienceDisplayMode != mode {
+		redWon, blueWon := false, false
+		if mode == "score" && arena.SavedMatch != nil {
+			redWon = arena.SavedMatch.Status == game.RedWonMatch || arena.SavedMatch.Status == game.TieMatch
+			blueWon = arena.SavedMatch.Status == game.BlueWonMatch || arena.SavedMatch.Status == game.TieMatch
+		}
+		arena.Plc.SetWinnerLights(redWon, blueWon)
+		arena.winnerLightsResetAt = time.Time{}
+		if redWon || blueWon {
+			arena.winnerLightsResetAt = time.Now().Add(10 * time.Second)
+		}
+
 		arena.AudienceDisplayMode = mode
 		arena.AudienceDisplayModeNotifier.Notify()
 		if mode == "score" {
@@ -763,6 +771,15 @@ func (arena *Arena) SetAllianceStationDisplayMode(mode string) {
 	if arena.AllianceStationDisplayMode != mode {
 		arena.AllianceStationDisplayMode = mode
 		arena.AllianceStationDisplayModeNotifier.Notify()
+
+		switch mode {
+		case "blank", "match", "timeout":
+			arena.Leds.SetMode(led.OffMode, led.OffMode)
+			arena.LedChangeNotifier.Notify()
+		case "logo":
+			arena.Leds.SetMode(led.RedMode, led.BlueMode)
+			arena.LedChangeNotifier.Notify()
+		}
 	}
 }
 
@@ -784,6 +801,11 @@ func (arena *Arena) Update() {
 	sendDsPacket := false
 	matchTimeSec := arena.MatchTimeSec()
 	currentTime := time.Now()
+	// Reset the winner trigger coils; the PLC controls the light sequence independently.
+	if !arena.winnerLightsResetAt.IsZero() && !currentTime.Before(arena.winnerLightsResetAt) {
+		arena.Plc.SetWinnerLights(false, false)
+		arena.winnerLightsResetAt = time.Time{}
+	}
 	switch arena.MatchState {
 	case PreMatch:
 		auto = true
@@ -1433,10 +1455,6 @@ func (arena *Arena) handlePlcInputOutput() {
 	// Handle the evergreen PLC functions: stack lights, stack buzzer, and field reset light.
 	switch arena.MatchState {
 	case PreMatch:
-		if arena.lastMatchState != PreMatch {
-			arena.Plc.SetFieldResetLight(true)
-			arena.Leds.SetMode(led.GreenMode, led.GreenMode)
-		}
 		fallthrough
 	case TimeoutActive:
 		fallthrough
@@ -1449,10 +1467,11 @@ func (arena *Arena) handlePlcInputOutput() {
 
 		// Turn off lights if all teams become ready.
 		if redAllianceReady && blueAllianceReady {
-			arena.FieldVolunteers = false
-			arena.FieldReset = false
-			arena.Plc.SetFieldResetLight(false)
-			arena.Leds.SetMode(led.OffMode, led.OffMode)
+			if !arena.FieldVolunteers {
+				arena.FieldReset = false
+				arena.Plc.SetFieldResetLight(false)
+				arena.Leds.SetMode(led.OffMode, led.OffMode)
+			}
 			if arena.CurrentMatch.FieldReadyAt.IsZero() {
 				arena.CurrentMatch.FieldReadyAt = time.Now()
 			}
@@ -1566,7 +1585,7 @@ func (arena *Arena) handleTeamStop(station string, eStopState, aStopState bool) 
 
 // Set the field lights and team signs to purple, if not in a match.
 func (arena *Arena) SignalVolunteers() {
-	if arena.MatchState != PostMatch && arena.MatchState != PreMatch {
+	if arena.MatchState != PostMatch && arena.MatchState != PreMatch && arena.MatchState != TimeoutActive {
 		// Don't signal volunteers during matches.
 		return
 	}
@@ -1574,6 +1593,7 @@ func (arena *Arena) SignalVolunteers() {
 	arena.FieldReset = false
 	arena.AllianceStationDisplayMode = "signalCount"
 	arena.AllianceStationDisplayModeNotifier.Notify()
+	arena.Plc.SetFieldResetLight(false)
 	arena.Leds.SetMode(led.PurpleMode, led.PurpleMode)
 	currentRed, currentBlue := arena.Leds.GetModes()
 	if currentRed != arena.lastRedLedMode || currentBlue != arena.lastBlueLedMode {
@@ -1583,7 +1603,7 @@ func (arena *Arena) SignalVolunteers() {
 
 // Set the field lights and team signs to green, if not in a match.
 func (arena *Arena) SignalReset() {
-	if arena.MatchState != PostMatch && arena.MatchState != PreMatch {
+	if arena.MatchState != PostMatch && arena.MatchState != PreMatch && arena.MatchState != TimeoutActive {
 		// Don't signal reset during matches.
 		return
 	}
@@ -1595,6 +1615,7 @@ func (arena *Arena) SignalReset() {
 	arena.FieldReset = true
 	arena.AllianceStationDisplayMode = "fieldReset"
 	arena.AllianceStationDisplayModeNotifier.Notify()
+	arena.Plc.SetFieldResetLight(true)
 	arena.Leds.SetMode(led.GreenMode, led.GreenMode)
 	currentRed, currentBlue := arena.Leds.GetModes()
 	if currentRed != arena.lastRedLedMode || currentBlue != arena.lastBlueLedMode {
@@ -1671,22 +1692,41 @@ func (arena *Arena) runPeriodicTasks() {
 
 // Handles audience display automation from after score post to next match intro.
 func (arena *Arena) AutomateAudienceDisplay(postedMatch *model.Match) {
-	// Show the score for 20 seconds before moving on.
-	time.Sleep(20 * time.Second)
-	if arena.AudienceDisplayMode != "score" {
+	arena.automateAudienceDisplay(postedMatch, time.Sleep)
+}
+
+// Inject the delay function so all transitions can be tested without waiting.
+// Read timing preferences once per sequence: editing Settings affects the next
+// posted score, not an already running automation.
+func (arena *Arena) automateAudienceDisplay(postedMatch *model.Match, sleep func(time.Duration)) {
+	if postedMatch == nil || arena.EventSettings == nil {
 		return
 	}
+	scoreDwell := time.Duration(arena.EventSettings.AudienceScoreSeconds()) * time.Second
+	playoffDelay := time.Duration(arena.EventSettings.AudiencePlayoffDelaySeconds()) * time.Second
+	bracketDwell := time.Duration(arena.EventSettings.AudienceBracketSeconds()) * time.Second
+	lastMatchDwell := time.Duration(arena.EventSettings.AudienceLastMatchSeconds()) * time.Second
+	expectedMode := "score"
 
-	if arena.CurrentMatch.Type == model.Playoff {
-		time.Sleep(10 * time.Second)
-		isFinals := strings.Contains(postedMatch.LongName, "Final") || strings.Contains(
-			postedMatch.LongName,
-			"Overtime",
-		)
+	sleep(scoreDwell)
+	if arena.AudienceDisplayMode != expectedMode {
+		return // Operator took over the display.
+	}
+
+	// Use the completed match, not the newly loaded next match, to decide
+	// whether to show a playoff bracket.
+	if postedMatch.Type == model.Playoff {
+		sleep(playoffDelay)
+		if arena.AudienceDisplayMode != expectedMode {
+			return
+		}
+		isFinals := strings.Contains(postedMatch.LongName, "Final") ||
+			strings.Contains(postedMatch.LongName, "Overtime")
 		if !isFinals {
 			arena.SetAudienceDisplayMode("bracket")
-			time.Sleep(20 * time.Second)
-			if arena.AudienceDisplayMode != "bracket" {
+			expectedMode = "bracket"
+			sleep(bracketDwell)
+			if arena.AudienceDisplayMode != expectedMode {
 				return
 			}
 		}
@@ -1698,13 +1738,12 @@ func (arena *Arena) AutomateAudienceDisplay(postedMatch *model.Match) {
 		return
 	}
 
-	if arena.CurrentMatch.Type == model.Test {
-		// No next match loaded, show the score for longer and then go into awards mode.
-		time.Sleep(40 * time.Second)
-		if arena.AudienceDisplayMode != "score" {
+	// Loading the test match means there is no next scheduled match.
+	if arena.CurrentMatch != nil && arena.CurrentMatch.Type == model.Test {
+		sleep(lastMatchDwell)
+		if arena.AudienceDisplayMode != expectedMode {
 			return
 		}
-
 		arena.SetAudienceDisplayMode("logoLuma")
 		arena.SetAllianceStationDisplayMode("logo")
 		return

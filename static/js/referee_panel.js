@@ -123,6 +123,8 @@ var handleMatchLoad = function (data) {
 const handleMatchTime = function (data) {
   isPostMatch = matchStates[data.MatchState] === "POST_MATCH";
   $(".control-button:not(#ftaReadyButton)").attr("data-enabled", isPostMatch);
+  $("#volunteerButton, #resetButton").attr("data-enabled",
+    isPostMatch || matchStates[data.MatchState] === "TIMEOUT_ACTIVE");
 
   let title = "Red/Yellow Cards";
   if(!isPostMatch) {

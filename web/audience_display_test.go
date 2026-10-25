@@ -28,6 +28,8 @@ func TestAudienceDisplay(t *testing.T) {
 	assert.Equal(t, 200, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "Audience Display - Untitled Event - Cheesy Arena")
 	assert.Contains(t, recorder.Body.String(), "finalTiebreakReason")
+	assert.Contains(t, recorder.Body.String(), "audienceInformation")
+	assert.Contains(t, recorder.Body.String(), "audience_information.js")
 }
 
 func TestAudienceDisplayWebsocket(t *testing.T) {
@@ -94,6 +96,12 @@ func TestAudienceDisplayWebsocket(t *testing.T) {
 	web.arena.ScorePostedNotifier.Notify()
 	scorePosted := readWebsocketType(t, ws, "scorePosted").(map[string]any)
 	assert.Equal(t, "TIEBREAK: MAJOR FOULS", scorePosted["TiebreakReason"])
+	for _, threshold := range []int{0, 50, 0, 42} {
+		web.arena.EventSettings.TraversalBonusThreshold = threshold
+		web.arena.ScorePostedNotifier.Notify()
+		scorePosted = readWebsocketType(t, ws, "scorePosted").(map[string]any)
+		assert.Equal(t, threshold != 0, scorePosted["TraversalBonusEnabled"])
+	}
 
 	// Test other overlays.
 	web.arena.AllianceSelectionNotifier.Notify()

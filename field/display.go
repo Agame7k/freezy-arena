@@ -38,6 +38,8 @@ const (
 	TwitchStreamDisplay
 	WallDisplay
 	WebpageDisplay
+	FmsFieldMonitorDisplay
+	UnpickedDisplay
 	DualFieldDisplay
 )
 
@@ -54,6 +56,8 @@ var DisplayTypeNames = map[DisplayType]string{
 	TwitchStreamDisplay:    "Twitch Stream",
 	WallDisplay:            "Wall",
 	WebpageDisplay:         "Web Page",
+	FmsFieldMonitorDisplay: "FMS Field Monitor",
+	UnpickedDisplay:        "Unpicked Teams",
 	DualFieldDisplay:       "Dual Field (hub)",
 }
 
@@ -70,6 +74,8 @@ var displayTypePaths = map[DisplayType]string{
 	TwitchStreamDisplay:    "/displays/twitch",
 	WallDisplay:            "/displays/wall",
 	WebpageDisplay:         "/displays/webpage",
+	FmsFieldMonitorDisplay: "/displays/fms_field_monitor",
+	UnpickedDisplay:        "/displays/unpicked",
 	DualFieldDisplay:       "/displays/dual_field",
 }
 

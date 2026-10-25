@@ -19,6 +19,44 @@ import (
 	"time"
 )
 
+func TestWinnerLightsReset(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		status game.MatchStatus
+		want   [2]bool
+	}{
+		{"red wins", game.RedWonMatch, [2]bool{true, false}},
+		{"blue wins", game.BlueWonMatch, [2]bool{false, true}},
+		{"tie", game.TieMatch, [2]bool{true, true}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			arena := setupTestArena(t)
+			fakePlc := &FakePlc{}
+			arena.Plc = fakePlc
+			arena.SavedMatch = &model.Match{Status: testCase.status}
+			before := time.Now()
+			arena.SetAudienceDisplayMode("score")
+			want := testCase.want
+			assert.Equal(t, want, fakePlc.winnerLights)
+			assert.False(t, arena.winnerLightsResetAt.Before(before.Add(10*time.Second)))
+			assert.False(t, arena.winnerLightsResetAt.After(time.Now().Add(10*time.Second)))
+			arena.Update()
+			assert.Equal(t, want, fakePlc.winnerLights)
+			arena.winnerLightsResetAt = time.Now().Add(-time.Second)
+			arena.Update()
+			assert.Equal(t, [2]bool{}, fakePlc.winnerLights)
+			assert.True(t, arena.winnerLightsResetAt.IsZero())
+
+			arena.SetAudienceDisplayMode("blank")
+			arena.SetAudienceDisplayMode("score")
+			assert.Equal(t, want, fakePlc.winnerLights)
+			arena.SetAudienceDisplayMode("blank")
+			assert.Equal(t, [2]bool{}, fakePlc.winnerLights)
+			assert.True(t, arena.winnerLightsResetAt.IsZero())
+		})
+	}
+}
+
 func TestAssignTeam(t *testing.T) {
 	arena := setupTestArena(t)
 
@@ -1118,6 +1156,7 @@ func TestPlcMatchCycleGameSpecific(t *testing.T) {
 
 	// Hub counts should be ignored before a match has started, motors should stay off, and the LEDs should signal
 	// field reset.
+	arena.SignalReset()
 	assert.Equal(t, PreMatch, arena.MatchState)
 	plc.redHubCount = 5
 	plc.blueHubCount = 8
@@ -1294,7 +1333,7 @@ func TestSignalVolunteers(t *testing.T) {
 	}
 
 	// Test that SignalVolunteers only works in PreMatch and PostMatch states.
-	for _, state := range []MatchState{StartMatch, AutoPeriod, PausePeriod, TeleopPeriod, TimeoutActive, PostTimeout} {
+	for _, state := range []MatchState{StartMatch, AutoPeriod, PausePeriod, TeleopPeriod, PostTimeout} {
 		arena.MatchState = state
 		arena.FieldVolunteers = false
 		arena.Leds.SetMode(led.OffMode, led.OffMode)
@@ -1335,7 +1374,7 @@ func TestSignalReset(t *testing.T) {
 	}
 
 	// Test that SignalReset only works in PreMatch and PostMatch states.
-	for _, state := range []MatchState{StartMatch, AutoPeriod, PausePeriod, TeleopPeriod, TimeoutActive, PostTimeout} {
+	for _, state := range []MatchState{StartMatch, AutoPeriod, PausePeriod, TeleopPeriod, PostTimeout} {
 		arena.MatchState = state
 		arena.FieldReset = false
 		arena.FieldVolunteers = false
@@ -1369,4 +1408,68 @@ func TestSignalReset(t *testing.T) {
 	assert.True(t, arena.FieldReset)
 	assert.Equal(t, "fieldReset", arena.AllianceStationDisplayMode)
 	assertHubLedModes(led.GreenMode, led.GreenMode)
+}
+
+func TestAudienceDisplayAutomationTimings(t *testing.T) {
+	cases := []struct {
+		name          string
+		posted        model.Match
+		next          model.MatchType
+		wantMode      string
+		wantDurations []time.Duration
+	}{
+		{"qualification", model.Match{Type: model.Qualification}, model.Qualification, "intro", []time.Duration{7 * time.Second}},
+		{"playoff despite qualification next", model.Match{Type: model.Playoff, LongName: "Semifinal 1"}, model.Qualification, "intro",
+			[]time.Duration{7 * time.Second, 4 * time.Second, 9 * time.Second}},
+		{"qualification despite playoff next", model.Match{Type: model.Qualification}, model.Playoff, "intro",
+			[]time.Duration{7 * time.Second}},
+		{"finals skip bracket", model.Match{Type: model.Playoff, LongName: "Final 1"}, model.Playoff, "intro",
+			[]time.Duration{7 * time.Second, 4 * time.Second}},
+		{"playoff last match", model.Match{Type: model.Playoff, LongName: "Semifinal 1"}, model.Test, "logoLuma",
+			[]time.Duration{7 * time.Second, 4 * time.Second, 9 * time.Second, 12 * time.Second}},
+		{"qualification last match", model.Match{Type: model.Qualification}, model.Test, "logoLuma",
+			[]time.Duration{7 * time.Second, 12 * time.Second}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			arena := setupTestArena(t)
+			arena.EventSettings.AutoAudienceScoreSec = 7
+			arena.EventSettings.AutoAudiencePlayoffDelaySec = 4
+			arena.EventSettings.AutoAudienceBracketSec = 9
+			arena.EventSettings.AutoAudienceLastMatchSec = 12
+			arena.AudienceDisplayMode = "score"
+			arena.CurrentMatch = &model.Match{Type: tc.next}
+			var durations []time.Duration
+			arena.automateAudienceDisplay(&tc.posted, func(delay time.Duration) {
+				durations = append(durations, delay)
+			})
+			assert.Equal(t, tc.wantDurations, durations)
+			assert.Equal(t, tc.wantMode, arena.AudienceDisplayMode)
+		})
+	}
+}
+
+func TestAudienceDisplayAutomationManualOverride(t *testing.T) {
+	arena := setupTestArena(t)
+	arena.AudienceDisplayMode = "score"
+	arena.CurrentMatch = &model.Match{Type: model.Playoff}
+	var durations []time.Duration
+	arena.automateAudienceDisplay(&model.Match{Type: model.Playoff, LongName: "Semifinal 1"},
+		func(delay time.Duration) {
+			durations = append(durations, delay)
+			if len(durations) == 2 {
+				arena.AudienceDisplayMode = "sponsor"
+			}
+		})
+	assert.Equal(t, []time.Duration{20 * time.Second, 10 * time.Second}, durations)
+	assert.Equal(t, "sponsor", arena.AudienceDisplayMode)
+}
+
+func TestAudienceDisplayAutomationTimeout(t *testing.T) {
+	arena := setupTestArena(t)
+	arena.AudienceDisplayMode = "score"
+	arena.MatchState = TimeoutActive
+	arena.CurrentMatch = &model.Match{Type: model.Qualification}
+	arena.automateAudienceDisplay(&model.Match{Type: model.Qualification}, func(time.Duration) {})
+	assert.Equal(t, "timeout", arena.AudienceDisplayMode)
 }

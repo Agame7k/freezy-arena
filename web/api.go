@@ -188,27 +188,55 @@ func (web *Web) rankingsApiHandler(w http.ResponseWriter, r *http.Request) {
 		rankingsWithNicknames = append(rankingsWithNicknames, row)
 	}
 
-	// Get the last match scored so we can report that on the display.
+	// Prefer upcoming qualifications, then playoff fixtures for teams that advance.
+	// Hidden matches are excluded by GetMatchesByType.
 	matches, err := web.arena.Database.GetMatchesByType(model.Qualification, false)
 	if err != nil {
 		handleWebErr(w, err)
 		return
 	}
+	playoffMatches, err := web.arena.Database.GetMatchesByType(model.Playoff, false)
+	if err != nil {
+		handleWebErr(w, err)
+		return
+	}
 	var highestPlayedMatch model.Match
-	for _, match := range matches {
+	// GetMatchesByType returns qualification matches in schedule order. The first
+	// non-complete match containing a team is their next scheduled appearance.
+	nextMatches := make(map[int]string)
+	for _, match := range append(matches, playoffMatches...) {
 		if match.IsComplete() {
-			highestPlayedMatch = match
+			if match.Type == model.Qualification {
+				highestPlayedMatch = match
+			}
+			continue
+		}
+		name := match.ShortName
+		if name == "" {
+			name = match.LongName
+		}
+		for _, teamId := range []int{match.Red1, match.Red2, match.Red3, match.Blue1, match.Blue2, match.Blue3} {
+			if teamId <= 0 {
+				continue
+			}
+			if _, exists := nextMatches[teamId]; !exists {
+				nextMatches[teamId] = name
+			}
 		}
 	}
 
 	data := struct {
 		Rankings           []RankingWithNickname
 		HighestPlayedMatch string
+		NextMatches        map[int]string
+		DisplayFields      []string
 		MultiConference    bool
 		Conference         *field.ConferenceDisplay
 	}{
 		rankingsWithNicknames,
 		highestPlayedMatch.ShortName,
+		nextMatches,
+		web.arena.EventSettings.RankingsDisplayFields(),
 		web.arena.EventSettings.MultiConferenceEnabled,
 		conference,
 	}
@@ -300,13 +328,18 @@ func (web *Web) bracketSvgApiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if err := web.generateBracketSvg(w, activeMatch); err != nil {
+	if err := web.generateBracketSvgWithTheme(w, activeMatch, r.URL.Query().Get("theme") == "dark"); err != nil {
 		handleWebErr(w, err)
 		return
 	}
 }
 
+// Generate the default, print-friendly bracket for standalone displays and reports.
 func (web *Web) generateBracketSvg(w io.Writer, activeMatch *model.Match) error {
+	return web.generateBracketSvgWithTheme(w, activeMatch, false)
+}
+
+func (web *Web) generateBracketSvgWithTheme(w io.Writer, activeMatch *model.Match, darkTheme bool) error {
 	if web.arena.PlayoffTournament != nil && web.arena.PlayoffTournament.IsMultiConference() {
 		return web.generateMultiConferenceBracketSvg(w, activeMatch, 0)
 	}
@@ -377,7 +410,8 @@ func (web *Web) generateBracketSvg(w io.Writer, activeMatch *model.Match) error 
 	data := struct {
 		BracketType string
 		Matchups    map[string]*allianceMatchup
-	}{bracketType, matchups}
+		DarkTheme   bool
+	}{bracketType, matchups, darkTheme}
 	return template.ExecuteTemplate(w, "bracket", data)
 }
 
